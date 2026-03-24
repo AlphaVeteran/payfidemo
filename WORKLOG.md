@@ -38,3 +38,74 @@
 - 不混淆 `intentId` 与 `escrowId`：前者是业务标识，后者是链上托管实例标识。
 - 不把真实生产私钥、密钥或敏感配置提交到仓库；`.env` 仅允许本地测试用途。
 - 不在截止前扩大范围到多链/主网/完整 HSP 真联调，优先保证单链路稳定可演示。
+
+## 当日记录（2026-03-24）
+
+【今日完成】
+- 完成本地测试控制台页面（Create Intent、Query 状态、Funding Hint、Release 命令生成）。
+- Funding 区 3 个 Copy 按钮改为“写入下方文本框 + 自动复制”，支持粘贴执行与结果回填。
+- 修复并打通链上 funding 主路径：`approve -> createAndDeposit -> funding/tx`，已返回 `status=active`。
+- 增强后端稳健性：`funding/tx` 增加 txHash 格式校验，日志序列化支持 BigInt，side-effect 异常不再影响主响应。
+- 新增一键环境脚本：`reset-local-dev.sh`（重置启动）与 `stop-local-dev.sh`（停止），并完成一次实际提交与 push（分支已建）。
+
+【未完成】
+- 未完成 release 全链路回归（`release/prepare -> sign -> submit` 的完整成功演练与截图沉淀）。
+- 未创建成功 GitHub PR（当前环境缺 `gh` 且网络访问 github 受限，已提供手动 PR 链接）。
+- 未做前端到期退款与回执可视化的体验优化（仍可用但非最终 demo 级）。
+
+【代码证据】
+- 文件：`web/index.html` -> 新增测试控制台结构，增加 Funding 说明、命令缓冲文本框、Release 命令复制入口。
+- 文件：`web/app.js` -> 实现 Create/Query/Funding/Release 命令生成；Copy 按钮写入文本框并复制；命令模板加入 PATH/.env。
+- 文件：`web/styles.css` -> 新增命令缓冲区样式与交互展示样式。
+- 文件：`src/routes/intents.ts` -> `funding/tx` 增加 txHash 严格校验；链上成功路径 side-effect 加防护。
+- 文件：`src/server.ts` -> 挂载静态 web 页面；增加端口占用提示与未捕获异常日志。
+- 文件：`src/services/mockHsp.ts`、`src/services/webhookStub.ts`、`src/util/safeJson.ts` -> 增加安全 JSON 序列化，避免 BigInt 导致日志崩溃。
+- 文件：`scripts/reset-local-dev.sh`、`scripts/stop-local-dev.sh` -> 一键重置/停止本地 Anvil + API 环境。
+- 文件：`README.md`、`.env.example`、`scripts/sign-release.mjs` -> 同步更新本地联调流程、私钥变量、命令示例与脚本文档。
+- 文件：`WORKLOG.md`、`DAILY_AI_WORKFLOW_TEMPLATE.md` -> 纳入本次提交范围并形成流程记录。
+
+【验证结果】
+- 命令：`npm run typecheck` -> 结果：通过（TypeScript 检查无错误）。
+- 命令：`./scripts/stop-local-dev.sh && ./scripts/reset-local-dev.sh` -> 结果：通过（旧进程关闭、Anvil/API 重启、Chrome 打开首页）。
+- 命令：`curl -sS http://127.0.0.1:8787/health` -> 结果：通过（`ok: true`，链上模式配置有效）。
+- 命令：`curl -sS -X POST http://127.0.0.1:8787/api/payfi/v1/intents/<id>/funding/tx ...` -> 结果：通过（返回 `{"ok":true,"status":"active","escrowId":"1","chain":true}`）。
+- 命令：`git commit ...` -> 结果：通过（提交 `fca2e01`）。
+- 命令：`git push -u origin feat/local-devx-console-reset` -> 结果：通过（分支已推送）。
+- 命令：`gh pr create ...` -> 结果：失败（本机无 `gh`；随后安装也因网络无法访问 github）。
+
+【明日第一任务建议（只能一个）】
+- 完整跑通并录证 `release/prepare -> sign-release -> release/submit` 全链路（含成功返回与 intent 状态变化截图）。
+
+【明日开工可直接使用的 Prompt】
+你是我的结对工程师。请严格执行以下流程，不要跳步：
+
+【任务】
+完成 PayFi 的 release 全链路验收：`release/prepare -> sign-release -> release/submit`，并输出可复用的验证证据（命令、返回、状态变化截图点位）。
+
+【硬约束】
+1. 只允许改这些文件：`web/app.js`、`web/index.html`、`README.md`、`WORKLOG.md`
+2. 明确禁止改：`contracts/**`、`src/abi/**`、`src/routes/intents.ts` 的 EIP-712 字段定义、`.env`
+3. 不做重构，不新增依赖，不改命名风格
+4. 不得输出“建议你去做”，你要直接执行可执行动作
+
+【执行步骤】
+1) 先阅读相关代码并输出：
+   - 当前实现现状（<=5条）
+   - 风险点（<=3条）
+   - 最小改动计划（<=7条）
+2) 等我回复“继续”后再开始改代码
+3) 改完后必须给出：
+   - 修改文件清单
+   - 每个文件改动目的
+   - 剩余风险
+4) 运行并汇报验证命令结果：
+   - `npm run typecheck`
+   - `curl -sS http://127.0.0.1:8787/health`
+   - 一次完整 release 命令链（prepare/sign/submit）
+   - `GET /api/payfi/v1/intents/:id` 状态核对（releaseCount/releasedTotal）
+
+【完成定义】
+- [ ] release/prepare 返回 typedData 且字段与当前 intent 一致
+- [ ] sign-release 生成 userSig 与 merchantSig 并成功提交 release
+- [ ] 提交后 intent 的 `releaseCount` 与 `releasedTotal` 正确递增
+- [ ] README 或页面文案中的 release 命令可直接复制执行且无额外手动修正
