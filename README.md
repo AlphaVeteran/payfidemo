@@ -60,6 +60,9 @@ CHAIN_ID=31337
 CHAIN_RPC_URL=http://127.0.0.1:8545
 ESCROW_ADDRESS=<PayFiEscrow 地址>
 SUBMITTER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+# 与 intent.user / intent.merchant 对应；网页「Copy cast command」与 scripts/sign-release.mjs 使用
+USER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+MERCHANT_PRIVATE_KEY=<Anvil 账户 #1 私钥>
 ```
 
 **意图里的 `user` / `merchant` 必须与链上 `createAndDeposit` 的调用一致。** Anvil 默认账户示例：
@@ -71,13 +74,31 @@ SUBMITTER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7b
 
 1. `npm run dev` 启动 API。  
 2. `POST /intents` 创建意图（`asset` = MockERC20 地址，`amountTotal` / `amountPerLesson` 用 **wei** 字符串，且满足 `maxReleases * amountPerLesson == amountTotal`）。  
-3. `GET /intents/:id/funding/hint` 取 `data`，用户 #0 发送交易：
+3. `GET /intents/:id/funding/hint` 取 `to` / `data`。用户 #0 需先 **授权** Escrow 划转 `amountTotal` 的 MockERC20，再 `createAndDeposit`（否则会 `ERC20InsufficientAllowance`）。
+
+较旧的 Foundry 上 `cast send` **没有** `--data`，请用函数签名 + 参数（与 hint 的 `data` 等价）：
 
 ```bash
-cast send <ESCROW> --rpc-url /tmp/payfi-anvil.ipc \
-  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-  --data <上一步返回的 data>
+export PATH="$HOME/.foundry/bin:$PATH"
+set -a && source .env && set +a
+cast send --rpc-url /tmp/payfi-anvil.ipc \
+  --private-key "$USER_PRIVATE_KEY" \
+  <MOCK_ERC20> \
+  "approve(address,uint256)" \
+  <ESCROW> \
+  <AMOUNT_TOTAL_WEI>
+
+cast send --rpc-url /tmp/payfi-anvil.ipc \
+  --private-key "$USER_PRIVATE_KEY" \
+  <ESCROW> \
+  "createAndDeposit(address,address,uint128,uint128,uint16,uint64,bytes32,address)" \
+  <MERCHANT> <ASSET> <AMOUNT_TOTAL_WEI> <AMOUNT_PER_LESSON_WEI> <MAX_RELEASES> <DURATION_SECONDS> \
+  <AGREEMENT_HASH_32B> 0x0000000000000000000000000000000000000000
 ```
+
+> 交互式 zsh 默认不把行首 `#` 当注释；若粘贴带 `#` 的说明行可能报 `command not found: #`，删掉即可或执行 `setopt interactivecomments`。
+
+若已 `foundryup` 到较新版本，也可使用：`cast send ... <ESCROW> --data <hint 返回的 data>`（以你本机 `cast send --help` 是否列出 `--data` 为准）。
 
 4. `POST .../funding/tx` 上报 `txHash`。  
 5. `release/prepare` 取 EIP-712（**不含 `termsVersion`**，与合约一致），用户/商家分别签名后 `release/submit`。
@@ -87,15 +108,20 @@ cast send <ESCROW> --rpc-url /tmp/payfi-anvil.ipc \
 私钥请使用 **`anvil` 启动时在终端打印的** `Private Key`（完整 32 字节 hex），勿用手抄截断的短串。
 
 ```bash
+# payfidemo 根目录；.env 中已配置 USER_PRIVATE_KEY、MERCHANT_PRIVATE_KEY
+export PATH="$HOME/.foundry/bin:$PATH"
+set -a && source .env && set +a
 PREP=$(curl -sS -X POST "$BASE/api/payfi/v1/intents/$INTENT_ID/release/prepare")
-SIGS=$(echo "$PREP" | USER_PRIVATE_KEY=<用户私钥> MERCHANT_PRIVATE_KEY=<商家私钥> node scripts/sign-release.mjs)
+SIGS=$(echo "$PREP" | node scripts/sign-release.mjs)
 USER_SIG=$(echo "$SIGS" | jq -r .userSig)
 MERCHANT_SIG=$(echo "$SIGS" | jq -r .merchantSig)
 
 curl -sS -X POST "$BASE/api/payfi/v1/intents/$INTENT_ID/release/submit" \
   -H "Content-Type: application/json" \
-  -d "{\"userSig\":\"$USER_SIG\",\"merchantSig\":\"$MERCHANT_SIG\"}" | jq .
+  -d "$(jq -n --arg u "$USER_SIG" --arg m "$MERCHANT_SIG" '{userSig:$u, merchantSig:$m}')" | jq .
 ```
+
+（也可临时覆盖：`echo "$PREP" | USER_PRIVATE_KEY=0x.. MERCHANT_PRIVATE_KEY=0x.. node scripts/sign-release.mjs`。）
 
 也可：`npm run sign-release -- prepare.json`（文件内容为 `release/prepare` 的 JSON）。
 
@@ -111,6 +137,18 @@ npm run dev
 ```
 
 默认监听：`http://127.0.0.1:8787`
+
+`npm run dev` 使用 `tsx watch`，保存文件时会重启进程；若此时正在 `curl`，可能看到 **Empty reply**。联调时可改用 **`npm start`**（无 watch）。请保证 `.env` 的 **`CHAIN_RPC_URL`（如 `http://127.0.0.1:8545`）与 `cast` 所连为同一 Anvil**。
+
+### 一键重置 / 一键停止
+
+```bash
+# 关闭旧进程 -> 启动 Anvil -> 重部署 -> 更新 .env -> 启动 API -> 打开独立 Chrome 窗口
+./scripts/reset-local-dev.sh
+
+# 关闭本地 Anvil / API 相关进程
+./scripts/stop-local-dev.sh
+```
 
 ## 测试接口（curl）
 

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PayFi Demo - Intent Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>PayFi Demo - Intent Console</h1>
+      <p class="muted">Create intent and query status for local testing.</p>
+
+      <section class="card">
+        <h2>Create Intent</h2>
+        <form id="create-form">
+          <div class="grid">
+            <label>
+              Merchant
+              <input name="merchant" required value="0x70997970C51812dc3A010C7d01b50e0d17dc79C8" />
+            </label>
+            <label>
+              User
+              <input name="user" required value="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" />
+            </label>
+            <label>
+              Asset
+              <input name="asset" required value="0x5FbDB2315678afecb367f032d93F642f64180aa3" />
+            </label>
+            <label>
+              Amount Total (wei)
+              <input name="amountTotal" required value="1000000000" />
+            </label>
+            <label>
+              Amount Per Lesson (wei)
+              <input name="amountPerLesson" required value="100000000" />
+            </label>
+            <label>
+              Max Releases
+              <input name="maxReleases" type="number" min="1" required value="10" />
+            </label>
+            <label>
+              Duration Seconds
+              <input name="durationSeconds" type="number" min="1" required value="2592000" />
+            </label>
+            <label>
+              Agreement Hash (bytes32)
+              <input
+                name="agreementHash"
+                required
+                value="0x0000000000000000000000000000000000000000000000000000000000000000"
+              />
+            </label>
+            <label>
+              Terms Version
+              <input name="termsVersion" required value="1.0.0" />
+            </label>
+            <label>
+              Webhook URL (optional)
+              <input name="webhookUrl" value="https://example.com/hooks/payfi" />
+            </label>
+          </div>
+          <button type="submit">Create Intent</button>
+        </form>
+        <pre id="create-result" class="result"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Query Intent Status</h2>
+        <form id="query-form" class="inline-form">
+          <input id="query-intent-id" placeholder="Paste intentId" required />
+          <button type="submit">Query</button>
+        </form>
+        <pre id="query-result" class="result"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Funding Hint</h2>
+        <p class="muted">
+          Fetch createAndDeposit calldata for the current intent.
+          <strong>Copy cast command</strong> runs from payfidemo root: <code>source .env</code>, then ERC20
+          <code>approve(escrow, amountTotal)</code>, then <code>createAndDeposit</code> (needs
+          <code>USER_PRIVATE_KEY</code>). Interactive zsh does not treat <code>#</code> as comment by default, so
+          pasted snippets omit <code>#</code> lines. <code>MERCHANT_PRIVATE_KEY</code> is for release signing.
+        </p>
+        <form id="funding-form" class="inline-form">
+          <input id="funding-intent-id" placeholder="Paste intentId" required />
+          <button type="submit">Get Hint</button>
+        </form>
+        <p class="muted">
+          <code>funding/tx</code> needs the full transaction hash: <code>0x</code> + 64 hex chars. Shorter strings
+          are rejected with <code>400 invalid txHash</code>.
+        </p>
+        <div class="hint-actions">
+          <button id="copy-calldata-btn" type="button">Copy calldata</button>
+          <button id="copy-cast-btn" type="button">Copy cast command</button>
+          <button id="copy-funding-report-btn" type="button">Copy funding/tx curl</button>
+          <span id="copy-status" class="copy-status"></span>
+        </div>
+        <label class="cmd-label">
+          Command / execution notes
+          <textarea
+            id="command-buffer"
+            class="command-buffer"
+            placeholder="Button content will appear here. You can paste terminal output back for tracking."
+          ></textarea>
+        </label>
+        <pre id="funding-result" class="result"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Release (prepare → sign → submit)</h2>
+        <p class="muted">
+          Runs <code>release/prepare</code>, pipes to <code>scripts/sign-release.mjs</code> (reads
+          <code>USER_PRIVATE_KEY</code> and <code>MERCHANT_PRIVATE_KEY</code> from <code>.env</code>), then
+          <code>release/submit</code>. Execute the copied block from the <strong>payfidemo repo root</strong>.
+          Requires <code>jq</code>.
+        </p>
+        <form id="release-form" class="inline-form">
+          <input id="release-intent-id" placeholder="Paste intentId" required />
+          <button type="button" id="copy-release-pipeline-btn">Copy sign + submit commands</button>
+          <span id="release-copy-status" class="copy-status"></span>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

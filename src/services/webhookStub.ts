@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { safeJsonStringify } from "../util/safeJson.js";
 
 /**
  * Demo: log only. Production would POST to webhookUrl with retries.
@@ -11,7 +12,7 @@ export function dispatchWebhookDemo(params: {
 }): { eventId: string; delivered: boolean } {
   const eventId = randomUUID();
   const timestamp = Math.floor(Date.now() / 1000).toString();
-  const payload = JSON.stringify({ ...params.body, eventId, type: params.type });
+  const payload = safeJsonStringify({ ...params.body, eventId, type: params.type });
   if (!params.webhookUrl) {
     console.log(`[Webhook:skipped] ${params.type}`, payload);
     return { eventId, delivered: false };

@@ -4,8 +4,12 @@
  * 用用户与商家私钥各签一次 EIP-712，输出 submit 所需的 userSig / merchantSig。
  *
  * 用法：
- *   curl -sS "$BASE/api/payfi/v1/intents/$INTENT_ID/release/prepare" | \
- *     USER_PRIVATE_KEY=0x... MERCHANT_PRIVATE_KEY=0x... node scripts/sign-release.mjs
+ *   # payfidemo 根目录：.env 里配置 USER_PRIVATE_KEY / MERCHANT_PRIVATE_KEY 后
+ *   set -a && source .env && set +a
+ *   curl -sS "$BASE/api/payfi/v1/intents/$INTENT_ID/release/prepare" | node scripts/sign-release.mjs
+ *
+ * 或临时传入：
+ *   curl -sS ... | USER_PRIVATE_KEY=0x... MERCHANT_PRIVATE_KEY=0x... node scripts/sign-release.mjs
  *
  * 或：
  *   USER_PRIVATE_KEY=0x... MERCHANT_PRIVATE_KEY=0x... node scripts/sign-release.mjs prepare.json

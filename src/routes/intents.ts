@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   encodeFunctionData,
   getAddress,
+  isHash,
   zeroAddress,
   type Address,
   type Hex,
@@ -136,16 +137,25 @@ router.post("/:intentId/funding/tx", async (req, res) => {
     res.status(404).json({ error: "not found" });
     return;
   }
-  const txHash = (req.body as { txHash?: string })?.txHash;
-  if (!txHash || typeof txHash !== "string") {
+  const rawTxHash = (req.body as { txHash?: string })?.txHash;
+  if (!rawTxHash || typeof rawTxHash !== "string") {
     res.status(400).json({ error: "txHash required" });
+    return;
+  }
+  const txHash = rawTxHash.trim();
+  if (!isHash(txHash)) {
+    res.status(400).json({
+      error: "invalid txHash",
+      detail: "must be 32-byte hex: 0x followed by 64 hex digits",
+      length: txHash.length,
+    });
     return;
   }
 
   try {
     if (isChainMode()) {
       const escrowAddr = getAddress(process.env.ESCROW_ADDRESS!.trim());
-      const parsed = await parseEscrowCreatedFromReceipt(escrowAddr, txHash as Hex);
+      const parsed = await parseEscrowCreatedFromReceipt(escrowAddr, txHash);
       if (!parsed) {
         res.status(400).json({ error: "no EscrowCreated in receipt for ESCROW_ADDRESS" });
         return;
@@ -183,24 +193,28 @@ router.post("/:intentId/funding/tx", async (req, res) => {
       row.expiresAt = parsed.expiresAt;
       saveIntent(row);
 
-      emitMockHsp("INTENT_FUNDED", {
-        intentId: row.intentId,
-        escrowId: parsed.escrowId,
-        txHash,
-        ...row.anchor,
-      });
-      dispatchWebhookDemo({
-        webhookUrl: row.webhookUrl,
-        webhookSecret: row.webhookSecret,
-        type: "INTENT_FUNDED",
-        body: {
+      try {
+        emitMockHsp("INTENT_FUNDED", {
           intentId: row.intentId,
           escrowId: parsed.escrowId,
           txHash,
-          agreementHash: row.anchor.agreementHash,
-          termsVersion: row.anchor.termsVersion,
-        },
-      });
+          ...row.anchor,
+        });
+        dispatchWebhookDemo({
+          webhookUrl: row.webhookUrl,
+          webhookSecret: row.webhookSecret,
+          type: "INTENT_FUNDED",
+          body: {
+            intentId: row.intentId,
+            escrowId: parsed.escrowId,
+            txHash,
+            agreementHash: row.anchor.agreementHash,
+            termsVersion: row.anchor.termsVersion,
+          },
+        });
+      } catch (sideErr) {
+        console.error("[funding/tx] mock hsp / webhook log failed:", sideErr);
+      }
       res.json({ ok: true, status: row.status, escrowId: parsed.escrowId, chain: true });
       return;
     }

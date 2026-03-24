@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { safeJsonStringify } from "../util/safeJson.js";
 
 export type HspKind =
   | "INTENT_CREATED"
@@ -22,7 +23,7 @@ export function emitMockHsp(kind: HspKind, payload: unknown): string {
     createdAt: new Date().toISOString(),
   };
   outbox.push(row);
-  console.log(`[MockHSP] ${kind}`, JSON.stringify(payload));
+  console.log(`[MockHSP] ${kind}`, safeJsonStringify(payload));
   return id;
 }
 

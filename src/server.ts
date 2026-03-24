@@ -1,6 +1,15 @@
 import "dotenv/config";
+
+process.on("uncaughtException", (err) => {
+  console.error("[payfidemo] uncaughtException:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[payfidemo] unhandledRejection:", reason);
+});
 import cors from "cors";
 import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import intentsRouter from "./routes/intents.js";
 import { getIntent, saveIntent } from "./store/memory.js";
 import { getHspOutbox } from "./services/mockHsp.js";
@@ -9,6 +18,8 @@ import { isChainMode } from "./chain/config.js";
 const app = express();
 app.use(cors());
 app.use(express.json());
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const webDir = path.resolve(__dirname, "../web");
 
 const API = "/api/payfi/v1";
 
@@ -24,6 +35,11 @@ app.get("/health", (_req, res) => {
 });
 
 app.use(`${API}/intents`, intentsRouter);
+app.use(express.static(webDir));
+
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(webDir, "index.html"));
+});
 
 app.get(`${API}/debug/hsp-outbox`, (_req, res) => {
   res.json({ events: getHspOutbox(100) });
@@ -50,8 +66,21 @@ app.use((_req, res) => {
 });
 
 const port = Number(process.env.PORT || 8787);
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`payfidemo listening on http://127.0.0.1:${port}`);
   console.log(`health: http://127.0.0.1:${port}/health`);
   console.log(`intents: http://127.0.0.1:${port}${API}/intents`);
+});
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `[payfidemo] Port ${port} is already in use. Stop the other listener, e.g.:\n` +
+        `  lsof -nP -iTCP:${port} -sTCP:LISTEN\n` +
+        `  kill $(lsof -ti :${port})\n` +
+        `Or run with a different port: PORT=8788 npm run dev`,
+    );
+  } else {
+    console.error("[payfidemo] listen error:", err);
+  }
+  process.exit(1);
 });
