@@ -39,6 +39,43 @@
 - 不把真实生产私钥、密钥或敏感配置提交到仓库；`.env` 仅允许本地测试用途。
 - 不在截止前扩大范围到多链/主网/完整 HSP 真联调，优先保证单链路稳定可演示。
 
+## 当日记录（按日期倒序：最新在上）
+
+## 当日记录（2026-03-25）
+
+【今日完成】
+- 修复链上 **`release/submit`** 失败根因 **`invalid chain id for signer`**：`viem/chains` 的 **`localhost` 固定 `chainId=1337`**，与 Anvil 默认 **`31337`** 不一致，导致 `eth_sendRawTransaction` 侧交易 chainId 错误。`src/chain/config.ts` 改为按 **`CHAIN_ID` 解析**（`parseChainIdFromEnv`），**`31337` 路径使用 `foundry` 链定义**；`src/routes/intents.ts` 中 EIP-712 **`release/prepare` 的 `domain.chainId` 与之一致**。
+- **`GET /health`** 增加 **`walletChainId`**，用于确认当前进程用于签交易的链 ID（预期 Anvil 为 **31337**）。
+- 新增文档 **`docs/api-request-flow.md`**：`GET /health` 与链上 **`POST .../funding/tx`** 的 Express / 路由 / `chain` 模块时序说明（Mermaid）。
+- 前端 **Release** 区块：`release-command-buffer` 文本区便于改 **`INTENT_ID`**；**「Refresh state」** 拉取 **`status` / `releaseCount` / `releasedTotal`** 并展示；Create / Query / Funding / 复制 release 命令后触发自动刷新。
+- 排查与文档化（对话结论）：**`8787` 业务 API** vs **`8545` JSON-RPC**；`curl` 占位符与端口误用；**内存 intent** 在 **API 重启后丢失**，需重建 intent 再跑 prepare；**`ASSET_ADDRESS`** 由 `reset-local-dev.sh` 写入 **`.env` 备忘**，业务代码不读取；**`sign-release.mjs`** 需 **`source .env`** 提供 **`USER_PRIVATE_KEY` / `MERCHANT_PRIVATE_KEY`**，且须用 **`node scripts/sign-release.mjs`** 执行。
+- **Release 全链路回归**：本地 **`release/prepare → sign-release → release/submit`** 成功，返回 **`ok: true`**、**`partially_settled`**、**`releaseCount`** / **`releasedTotal`** 递增、**`chain: true`** 与 **`txHash`**。
+
+【未完成】
+- （与前日并列的远期项仍有效）Base Sepolia 地址落地、持久化存储、webhook 闭环、PR 环境、`gh` 网络等。
+- Release / refund **演示截图或录屏**仍可按需补入提交材料。
+
+【代码证据】
+- `src/chain/config.ts`：链 ID 解析、`foundry` 对齐 `31337`、`getPublicClient` / `getSubmitterWallet` 使用统一 `chainFromEnv`。
+- `src/server.ts`：`/health` 增加 **`walletChainId`**。
+- `src/routes/intents.ts`：**`parseChainIdFromEnv`** 用于 **`release/prepare`**。
+- `docs/api-request-flow.md`：HTTP 与链调用关系图。
+- `web/index.html`、`web/app.js`、`web/styles.css`：Release 命令缓冲区、**Refresh state** 与 settlement 字段展示。
+
+【验证结果】
+- 命令：`npm run typecheck` → 通过。
+- 命令：`curl -sS http://127.0.0.1:8787/health | jq .` → **`walletChainId`: 31337**，**`chainMode`: true**。
+- 命令：完整 **`release/prepare` → `node scripts/sign-release.mjs` → `release/submit`**（curl）→ 成功响应示例：**`status`: `partially_settled`**，**`releaseCount`**: 1，**`releasedTotal`** 与 **`amountPerLesson`** 一致，**`txHash`** 非空。
+
+【明日第一任务建议（只能一个）】
+- 从 **`partially_settled`** 继续多次 **release** 直至 **`settled`**，并演练 **`refund`**（含 **`PAYFIDEMO_DEBUG`** 下 **`expire`**），最后核对 intent 与链上 **`escrows`** 一致。
+
+【完成定义（2026-03-25 勾选）】
+- [x] release/prepare 返回 typedData 且字段与当前 intent 一致
+- [x] sign-release 生成 userSig 与 merchantSig 并成功提交 release（链上模式）
+- [x] 提交后 intent 的 `releaseCount` 与 `releasedTotal` 正确递增
+- [x] 页面 Release 命令块可直接复制执行（须已 `source .env` 且 intent 未因重启丢失）
+
 ## 当日记录（2026-03-24）
 
 【今日完成】
@@ -109,3 +146,5 @@
 - [ ] sign-release 生成 userSig 与 merchantSig 并成功提交 release
 - [ ] 提交后 intent 的 `releaseCount` 与 `releasedTotal` 正确递增
 - [ ] README 或页面文案中的 release 命令可直接复制执行且无额外手动修正
+
+（注：以上 checklist 已于 **2026-03-25** 在本地链上模式跑通并记入当日记录。）

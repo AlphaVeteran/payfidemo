@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import intentsRouter from "./routes/intents.js";
 import { getIntent, saveIntent } from "./store/memory.js";
 import { getHspOutbox } from "./services/mockHsp.js";
-import { isChainMode } from "./chain/config.js";
+import { getWalletChainId, isChainMode } from "./chain/config.js";
 
 const app = express();
 app.use(cors());
@@ -28,6 +28,8 @@ app.get("/health", (_req, res) => {
     ok: true,
     service: "payfidemo",
     chainId: process.env.CHAIN_ID || "31337",
+    /** viem 签交易使用的链 ID；Anvil 应为 31337。若见 1337 说明进程未加载最新代码或未重启。 */
+    walletChainId: getWalletChainId(),
     chainMode: isChainMode(),
     chainRpc: process.env.CHAIN_RPC_URL || null,
     escrowConfigured: Boolean(process.env.ESCROW_ADDRESS?.trim()),

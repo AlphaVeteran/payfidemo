@@ -13,7 +13,12 @@ import { emitMockHsp } from "../services/mockHsp.js";
 import { dispatchWebhookDemo } from "../services/webhookStub.js";
 import type { CreateIntentBody, IntentRecord } from "../types.js";
 import { payFiEscrowAbi } from "../abi/payFiEscrow.js";
-import { getPublicClient, getSubmitterWallet, isChainMode } from "../chain/config.js";
+import {
+  getPublicClient,
+  getSubmitterWallet,
+  isChainMode,
+  parseChainIdFromEnv,
+} from "../chain/config.js";
 import { parseEscrowCreatedFromReceipt } from "../chain/funding.js";
 
 const router = Router();
@@ -267,7 +272,7 @@ router.post("/:intentId/release/prepare", (req, res) => {
     res.status(400).json({ error: "not funded" });
     return;
   }
-  const chainId = Number(process.env.CHAIN_ID || 31337);
+  const chainId = parseChainIdFromEnv();
   const verifying = process.env.ESCROW_ADDRESS?.trim()
     ? getAddress(process.env.ESCROW_ADDRESS.trim())
     : "0x0000000000000000000000000000000000000000";
