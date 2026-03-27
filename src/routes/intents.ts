@@ -99,6 +99,15 @@ router.get("/:intentId/funding/hint", (req, res) => {
     return;
   }
   try {
+    let disputeModuleAddr: Address = zeroAddress;
+    if (row.anchor.disputeResolver) {
+      try {
+        disputeModuleAddr = getAddress(row.anchor.disputeResolver);
+      } catch (_e) {
+        res.status(400).json({ error: "invalid disputeResolver address" });
+        return;
+      }
+    }
     const data = encodeFunctionData({
       abi: payFiEscrowAbi,
       functionName: "createAndDeposit",
@@ -110,7 +119,7 @@ router.get("/:intentId/funding/hint", (req, res) => {
         row.maxReleases,
         BigInt(row.durationSeconds),
         row.anchor.agreementHash as Hex,
-        zeroAddress,
+        disputeModuleAddr,
       ],
     });
     res.json({

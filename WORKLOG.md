@@ -41,6 +41,33 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-03-26）
+
+【今日完成】
+- 后端 `intents` 主链路继续完善：围绕 `create -> funding -> release -> refund` 的状态流转、参数校验与链上/本地 demo 双模式分支完成联调收敛。
+- `funding/tx` 增强链上一致性校验：基于回执解析 `EscrowCreated` 后，对 `user/merchant/asset/amountTotal/agreementHash` 与 intent 做严格比对，异常返回明确错误信息。
+- `release/prepare` + `release/submit` 路径补齐可执行性：增加 releaseNonce 同步检查、提交后 `releaseCount/releasedTotal/status` 回写，并继续触发 `MockHSP` 与 webhook 事件。
+- 本地调试控制台（`web/`）增强：补充 funding 与 release 一键复制命令（calldata / cast / funding curl / prepare-sign-submit pipeline）与状态刷新展示，降低手工串联成本。
+- 本地重置脚本 `scripts/reset-local-dev.sh` 升级：支持清理旧进程、启动 anvil、bootstrap 合约、自动回写 `.env` 关键配置并拉起 API，形成一键恢复联调环境流程。
+- 新增 `frontend/` Next.js + wagmi 前端工程骨架：已接入钱包连接、create intent、approve+deposit、双签 release、release submit 的主路径页面与 API 封装。
+- 产出黑客松倒排计划文档 `docs/hackathon-2045-dev-schedule.md`：明确 W0-W4 目标、交付物、砍 scope 顺序与提交自查项。
+
+【未完成】
+- 当日改动尚未形成独立 commit；需整理后按功能维度拆分提交（建议后端/脚本、web 调试台、frontend 初始化分开）。
+- `frontend/README.md` 仍为默认模板，需补充本项目实际运行方式、环境变量与演示步骤。
+- Base Sepolia 地址落地、持久化存储、webhook 可靠投递闭环等长期项仍待推进。
+
+【代码证据】
+- 后端主流程：`src/routes/intents.ts`
+- 调试控制台：`web/app.js`、`web/index.html`
+- 一键重置脚本：`scripts/reset-local-dev.sh`
+- npm 脚本入口：`package.json`
+- 前端初始化与流程页：`frontend/package.json`、`frontend/components/payfi-demo.tsx`、`frontend/lib/payfi-api.ts`
+- 赛程与里程碑文档：`docs/hackathon-2045-dev-schedule.md`
+
+【明日第一任务建议（只能一个）】
+- 先把 `frontend` 从“可跑”推进到“可演示”：补齐项目 README、环境变量说明与一条从创建 intent 到 release submit 的端到端演示脚本（含截图点位）。
+
 ## 当日记录（2026-03-25）
 
 【今日完成】

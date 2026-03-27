@@ -176,6 +176,7 @@ copyCastBtn.addEventListener("click", async () => {
     const sig =
       "createAndDeposit(address,address,uint128,uint128,uint16,uint64,bytes32,address)";
     const disputeZero = "0x0000000000000000000000000000000000000000";
+    const disputeModule = intent.anchor?.disputeResolver || disputeZero;
     const argList = [
       intent.merchant,
       intent.asset,
@@ -184,7 +185,7 @@ copyCastBtn.addEventListener("click", async () => {
       String(intent.maxReleases),
       String(intent.durationSeconds),
       agreementHash,
-      disputeZero,
+      disputeModule,
     ];
     const argsLines = argList.join(" \\\n  ");
 

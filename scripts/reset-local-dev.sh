@@ -9,6 +9,8 @@ ANVIL_PORT="${ANVIL_PORT:-8545}"
 API_PORT="${PORT:-8787}"
 ANVIL_IPC="${ANVIL_IPC:-/tmp/payfi-anvil.ipc}"
 ANVIL_KEY="${ANVIL_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+ANVIL_CHAIN_ID="${ANVIL_CHAIN_ID:-31337}"
+export ANVIL_CHAIN_ID
 APP_URL="http://127.0.0.1:${API_PORT}/"
 
 echo "[payfidemo] Stopping old local processes..."
@@ -45,7 +47,10 @@ npm run anvil:bootstrap > .bootstrap.log 2>&1
 
 ADDRS="$(node -e '
 const fs = require("fs");
-const p = "broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json";
+const p =
+  "broadcast/LocalAnvilBootstrap.s.sol/" +
+  process.env.ANVIL_CHAIN_ID +
+  "/run-latest.json";
 const j = JSON.parse(fs.readFileSync(p, "utf8"));
 const txs = j.transactions || [];
 const escrow = txs.find(t => t.contractName === "PayFiEscrow")?.contractAddress || "";
@@ -65,7 +70,7 @@ const escrow = process.argv[1];
 const token = process.argv[2];
 const required = {
   PORT: "8787",
-  CHAIN_ID: "31337",
+  CHAIN_ID: String(process.env.ANVIL_CHAIN_ID),
   CHAIN_RPC_URL: "http://127.0.0.1:8545",
   ESCROW_ADDRESS: escrow,
   SUBMITTER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
