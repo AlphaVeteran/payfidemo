@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PayFi Demo Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 500;
+    color: #94a3b8;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: #475569;
+    margin-bottom: 20px;
+  }
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  button {
+    font-size: 12px;
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: 0.5px solid #334155;
+    background: transparent;
+    cursor: pointer;
+    color: #94a3b8;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  button:hover { border-color: #64748b; color: #cbd5e1; }
+  button.active {
+    background: #1e3a5f;
+    color: #7dd3fc;
+    border-color: #1d4ed8;
+  }
+  .panel { display: none; }
+  .panel.visible { display: block; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .step-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .step-dots { display: flex; gap: 5px; }
+  .step-dots span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #334155;
+    transition: background 0.25s;
+    display: inline-block;
+  }
+  .step-dots span.active { background: #3b82f6; }
+  .step-label {
+    font-size: 11px;
+    color: #475569;
+    margin-left: 4px;
+  }
+  @keyframes flowPulse {
+    0%   { stroke-dashoffset: 40; opacity: 0.25; }
+    50%  { opacity: 0.9; }
+    100% { stroke-dashoffset: 0; opacity: 0.25; }
+  }
+  .flow-line { stroke-dasharray: 8 4; animation: flowPulse 2s ease-in-out infinite; }
+  .flow-line-2 { animation-delay: 0.65s; }
+  .flow-line-3 { animation-delay: 1.3s; }
+</style>
+</head>
+<body>
+
+<h1>PayFi Demo Settlement Flow</h1>
+<p class="subtitle">Intent API + Escrow Contract + Dual EIP-712 Signatures + MockHSP/Webhook</p>
+
+<div class="btn-row">
+  <button id="btn-all" onclick="setMode('all')" class="active">Full Flow</button>
+  <button id="btn-step" onclick="setMode('step')">Step by Step</button>
+  <button id="btn-compare" onclick="setMode('compare')">vs Legacy Manual Flow</button>
+</div>
+
+<div id="panel-all" class="panel visible">
+<svg width="100%" viewBox="0 0 680 500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect x="18" y="52" width="206" height="388" rx="10" fill="#1e293b" stroke="#1d4ed8" stroke-width="0.5" stroke-dasharray="4 3" opacity="0.5"/>
+  <rect x="236" y="52" width="206" height="388" rx="10" fill="#1e293b" stroke="#15803d" stroke-width="0.5" stroke-dasharray="4 3" opacity="0.5"/>
+  <rect x="454" y="52" width="206" height="388" rx="10" fill="#1e293b" stroke="#b45309" stroke-width="0.5" stroke-dasharray="4 3" opacity="0.5"/>
+
+  <text x="121" y="44" text-anchor="middle" font-size="11" font-weight="500" fill="#3b82f6">Client Side</text>
+  <text x="339" y="44" text-anchor="middle" font-size="11" font-weight="500" fill="#22c55e">PayFi API Orchestration</text>
+  <text x="557" y="44" text-anchor="middle" font-size="11" font-weight="500" fill="#f59e0b">On-chain + Notifications</text>
+
+  <rect x="30" y="78" width="182" height="74" rx="8" fill="#0f2744" stroke="#1d4ed8" stroke-width="0.5"/>
+  <text x="121" y="103" text-anchor="middle" font-size="13" font-weight="500" fill="#93c5fd">User + Merchant Wallets</text>
+  <text x="121" y="120" text-anchor="middle" font-size="11" fill="#60a5fa">Create intent / sign release</text>
+  <rect x="66" y="132" width="110" height="16" rx="4" fill="#1e3a5f" opacity="0.8"/>
+  <text x="121" y="143" text-anchor="middle" font-size="10" fill="#7dd3fc">Rabby / Injected wallet</text>
+
+  <rect x="248" y="78" width="182" height="90" rx="8" fill="#0a2116" stroke="#15803d" stroke-width="0.8"/>
+  <text x="339" y="103" text-anchor="middle" font-size="13" font-weight="500" fill="#86efac">Intent API</text>
+  <text x="339" y="120" text-anchor="middle" font-size="10" fill="#22c55e">POST/GET intents</text>
+  <text x="339" y="136" text-anchor="middle" font-size="10" fill="#22c55e">funding/tx verify</text>
+  <text x="339" y="152" text-anchor="middle" font-size="10" fill="#22c55e">release prepare + submit</text>
+
+  <rect x="466" y="78" width="182" height="82" rx="8" fill="#1c0f00" stroke="#b45309" stroke-width="0.5"/>
+  <text x="557" y="103" text-anchor="middle" font-size="13" font-weight="500" fill="#fcd34d">PayFiEscrow Contract</text>
+  <text x="557" y="120" text-anchor="middle" font-size="11" fill="#f59e0b">createAndDeposit</text>
+  <text x="557" y="136" text-anchor="middle" font-size="11" fill="#f59e0b">releaseBySignatures / refund</text>
+  <text x="557" y="151" text-anchor="middle" font-size="10" fill="#fde68a">Base Sepolia / Anvil</text>
+
+  <rect x="30" y="232" width="182" height="56" rx="8" fill="#0f2744" stroke="#1d4ed8" stroke-width="0.5"/>
+  <text x="121" y="255" text-anchor="middle" font-size="12" font-weight="500" fill="#93c5fd">Funding Transaction</text>
+  <text x="121" y="273" text-anchor="middle" font-size="10" fill="#3b82f6">approve + deposit txHash</text>
+
+  <rect x="248" y="232" width="182" height="56" rx="8" fill="#0a2116" stroke="#15803d" stroke-width="0.5"/>
+  <text x="339" y="255" text-anchor="middle" font-size="12" font-weight="500" fill="#86efac">State Machine</text>
+  <text x="339" y="273" text-anchor="middle" font-size="10" fill="#22c55e">awaiting -> active -> settled</text>
+
+  <rect x="466" y="220" width="182" height="76" rx="8" fill="#1c0f00" stroke="#b45309" stroke-width="0.5"/>
+  <text x="557" y="245" text-anchor="middle" font-size="12" font-weight="500" fill="#fcd34d">EscrowCreated Receipt</text>
+  <text x="557" y="263" text-anchor="middle" font-size="10" fill="#f59e0b">Verify merchant/user/asset</text>
+  <text x="557" y="279" text-anchor="middle" font-size="10" fill="#f59e0b">agreementHash consistency</text>
+
+  <rect x="248" y="352" width="182" height="48" rx="8" fill="#0a2116" stroke="#15803d" stroke-width="0.5" stroke-dasharray="3 2"/>
+  <text x="339" y="372" text-anchor="middle" font-size="11" font-weight="500" fill="#86efac">Dual Signature Payload</text>
+  <text x="339" y="388" text-anchor="middle" font-size="10" fill="#22c55e">EIP-712 Release domain</text>
+
+  <rect x="466" y="352" width="182" height="48" rx="8" fill="#1c0f00" stroke="#b45309" stroke-width="0.5"/>
+  <text x="557" y="372" text-anchor="middle" font-size="11" font-weight="500" fill="#fcd34d">MockHSP + Webhook</text>
+  <text x="557" y="388" text-anchor="middle" font-size="10" fill="#f59e0b">INTENT_FUNDED / RELEASED / REFUNDED</text>
+
+  <circle r="5" fill="#3b82f6" opacity="0">
+    <animateMotion dur="2.4s" repeatCount="indefinite" begin="0s"><mpath href="#p1"/></animateMotion>
+    <animate attributeName="opacity" values="0;1;1;0" dur="2.4s" repeatCount="indefinite" begin="0s"/>
+  </circle>
+  <circle r="5" fill="#3b82f6" opacity="0">
+    <animateMotion dur="2.4s" repeatCount="indefinite" begin="1.1s"><mpath href="#p1"/></animateMotion>
+    <animate attributeName="opacity" values="0;1;1;0" dur="2.4s" repeatCount="indefinite" begin="1.1s"/>
+  </circle>
+  <path id="p1" d="M212 115 C 224 115, 236 122, 248 122" fill="none" stroke="#3b82f6" stroke-width="1.5" class="flow-line" marker-end="url(#arr)"/>
+  <text x="230" y="108" text-anchor="middle" font-size="10" fill="#60a5fa">intent</text>
+
+  <circle r="5" fill="#22c55e" opacity="0">
+    <animateMotion dur="2.1s" repeatCount="indefinite" begin="0.5s"><mpath href="#p2"/></animateMotion>
+    <animate attributeName="opacity" values="0;1;1;0" dur="2.1s" repeatCount="indefinite" begin="0.5s"/>
+  </circle>
+  <path id="p2" d="M430 122 C 442 122, 454 122, 466 122" fill="none" stroke="#22c55e" stroke-width="1.5" class="flow-line flow-line-2" marker-end="url(#arr)"/>
+  <text x="448" y="114" text-anchor="middle" font-size="10" fill="#4ade80">calldata + tx</text>
+
+  <path d="M121 288 C 121 320, 290 320, 339 288" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="4 4" class="flow-line flow-line-3" marker-end="url(#arr)"/>
+  <text x="214" y="323" text-anchor="middle" font-size="10" fill="#64748b">funding/tx report</text>
+
+  <path d="M430 260 C 442 260, 454 260, 466 260" fill="none" stroke="#22c55e" stroke-width="1" stroke-dasharray="4 4" class="flow-line flow-line-2" marker-end="url(#arr)"/>
+  <path d="M339 168 C 339 196, 339 206, 339 232" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arr)" opacity="0.65"/>
+  <path d="M339 288 C 339 314, 339 326, 339 352" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arr)" opacity="0.65"/>
+  <path d="M430 376 C 442 376, 454 376, 466 376" fill="none" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="5 4" class="flow-line" marker-end="url(#arr)" opacity="0.7"/>
+
+  <rect x="18" y="452" width="642" height="30" rx="6" fill="#1e293b" opacity="0.65"/>
+  <text x="30" y="471" font-size="11" fill="#64748b">Fast demo loop:</text>
+  <text x="116" y="471" font-size="10" fill="#60a5fa">Intent create</text>
+  <text x="196" y="471" font-size="10" fill="#64748b">→</text>
+  <text x="210" y="471" font-size="10" fill="#22c55e">Fund + verify</text>
+  <text x="300" y="471" font-size="10" fill="#64748b">→</text>
+  <text x="314" y="471" font-size="10" fill="#4ade80">Dual-sign release</text>
+  <text x="430" y="471" font-size="10" fill="#64748b">→</text>
+  <text x="444" y="471" font-size="10" fill="#f59e0b">Webhook/audit event</text>
+</svg>
+</div>
+
+<div id="panel-step" class="panel">
+<svg width="100%" viewBox="0 0 680 390" id="step-svg" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <g id="s1">
+    <rect x="60" y="55" width="560" height="270" rx="12" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="340" y="86" text-anchor="middle" font-size="14" font-weight="500" fill="#e2e8f0">Step 1 — Create Intent</text>
+    <rect x="95" y="108" width="180" height="80" rx="8" fill="#0f2744" stroke="#1d4ed8" stroke-width="0.8"/>
+    <text x="185" y="144" text-anchor="middle" font-size="13" font-weight="500" fill="#93c5fd">Frontend / Wallet</text>
+    <text x="185" y="162" text-anchor="middle" font-size="11" fill="#3b82f6">merchant/user/asset params</text>
+    <rect x="405" y="108" width="180" height="80" rx="8" fill="#0a2116" stroke="#15803d" stroke-width="0.8"/>
+    <text x="495" y="144" text-anchor="middle" font-size="13" font-weight="500" fill="#86efac">Intent API</text>
+    <text x="495" y="162" text-anchor="middle" font-size="11" fill="#22c55e">returns intentId + status</text>
+    <circle r="6" fill="#3b82f6" opacity="0">
+      <animateMotion dur="1.8s" repeatCount="indefinite"><mpath href="#sp1"/></animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <path id="sp1" d="M275 148 L 405 148" fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arr2)"/>
+    <text x="340" y="140" text-anchor="middle" font-size="11" fill="#60a5fa">POST /intents</text>
+  </g>
+
+  <g id="s2" style="display:none">
+    <rect x="60" y="55" width="560" height="270" rx="12" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="340" y="86" text-anchor="middle" font-size="14" font-weight="500" fill="#e2e8f0">Step 2 — Fund Escrow</text>
+    <rect x="95" y="108" width="180" height="82" rx="8" fill="#0f2744" stroke="#1d4ed8" stroke-width="0.8"/>
+    <text x="185" y="138" text-anchor="middle" font-size="12" font-weight="500" fill="#93c5fd">User Wallet</text>
+    <text x="185" y="156" text-anchor="middle" font-size="11" fill="#3b82f6">approve + createAndDeposit</text>
+    <text x="185" y="173" text-anchor="middle" font-size="10" fill="#60a5fa">submit txHash</text>
+    <rect x="405" y="108" width="180" height="82" rx="8" fill="#1c0f00" stroke="#b45309" stroke-width="0.8"/>
+    <text x="495" y="138" text-anchor="middle" font-size="12" font-weight="500" fill="#fcd34d">Escrow Contract</text>
+    <text x="495" y="156" text-anchor="middle" font-size="11" fill="#f59e0b">EscrowCreated event</text>
+    <text x="495" y="173" text-anchor="middle" font-size="10" fill="#fde68a">funds locked</text>
+    <path d="M275 148 L 405 148" fill="none" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <rect x="145" y="235" width="390" height="56" rx="6" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+    <text x="340" y="258" text-anchor="middle" font-size="12" font-weight="500" fill="#cbd5e1">API verifies receipt fields and moves status to active</text>
+    <text x="340" y="276" text-anchor="middle" font-size="11" fill="#64748b">user / merchant / asset / amount / agreementHash</text>
+  </g>
+
+  <g id="s3" style="display:none">
+    <rect x="60" y="55" width="560" height="270" rx="12" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="340" y="86" text-anchor="middle" font-size="14" font-weight="500" fill="#e2e8f0">Step 3 — Prepare Release Typed Data</text>
+    <rect x="112" y="110" width="456" height="164" rx="8" fill="#0a2116" stroke="#15803d" stroke-width="0.8"/>
+    <text x="340" y="136" text-anchor="middle" font-size="13" font-weight="500" fill="#86efac">POST /release/prepare</text>
+    <text x="340" y="160" text-anchor="middle" font-size="11" fill="#22c55e">domain: chainId + escrow address</text>
+    <text x="340" y="180" text-anchor="middle" font-size="11" fill="#22c55e">message: escrowId + nonce + amount + merchant + agreementHash</text>
+    <text x="340" y="202" text-anchor="middle" font-size="11" fill="#22c55e">frontend gets typedData for both user and merchant signing</text>
+    <text x="340" y="236" text-anchor="middle" font-size="10" fill="#4ade80">termsVersion remains business metadata (not in on-chain typedData)</text>
+  </g>
+
+  <g id="s4" style="display:none">
+    <rect x="60" y="55" width="560" height="270" rx="12" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="340" y="86" text-anchor="middle" font-size="14" font-weight="500" fill="#e2e8f0">Step 4 — Dual Sign + Submit Release</text>
+    <rect x="85" y="112" width="154" height="74" rx="8" fill="#0f2744" stroke="#1d4ed8" stroke-width="0.5"/>
+    <text x="162" y="143" text-anchor="middle" font-size="12" font-weight="500" fill="#93c5fd">User signs</text>
+    <text x="162" y="161" text-anchor="middle" font-size="11" fill="#3b82f6">userSig</text>
+    <rect x="263" y="102" width="154" height="94" rx="8" fill="#0c1a0a" stroke="#3b6d11" stroke-width="0.8"/>
+    <text x="340" y="134" text-anchor="middle" font-size="12" font-weight="500" fill="#a3e635">Backend submitter</text>
+    <text x="340" y="152" text-anchor="middle" font-size="11" fill="#65a30d">releaseBySignatures()</text>
+    <text x="340" y="169" text-anchor="middle" font-size="10" fill="#65a30d">checks releaseNonce</text>
+    <rect x="441" y="112" width="154" height="74" rx="8" fill="#1c0f00" stroke="#b45309" stroke-width="0.5"/>
+    <text x="518" y="143" text-anchor="middle" font-size="12" font-weight="500" fill="#fcd34d">Merchant signs</text>
+    <text x="518" y="161" text-anchor="middle" font-size="11" fill="#f59e0b">merchantSig</text>
+    <path d="M239 149 L 263 149" fill="none" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <path d="M441 149 L 417 149" fill="none" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arr2)"/>
+    <rect x="138" y="242" width="404" height="50" rx="6" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+    <text x="340" y="264" text-anchor="middle" font-size="11" fill="#64748b">Intent status updates to partially_settled or settled</text>
+    <text x="340" y="281" text-anchor="middle" font-size="11" fill="#64748b">releaseCount / releasedTotal incremented</text>
+  </g>
+
+  <g id="s5" style="display:none">
+    <rect x="60" y="55" width="560" height="270" rx="12" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+    <text x="340" y="86" text-anchor="middle" font-size="14" font-weight="500" fill="#e2e8f0">Step 5 — Webhook + Audit Completion</text>
+    <text x="340" y="136" text-anchor="middle" font-size="28" fill="#22c55e">✓</text>
+    <text x="340" y="166" text-anchor="middle" font-size="13" font-weight="500" fill="#cbd5e1">Settlement event emitted and merchant notified</text>
+    <rect x="100" y="186" width="480" height="106" rx="8" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
+    <text x="158" y="212" font-size="12" font-weight="500" fill="#94a3b8">Audit Item</text>
+    <text x="562" y="212" text-anchor="end" font-size="12" font-weight="500" fill="#94a3b8">Status</text>
+    <line x1="118" y1="220" x2="562" y2="220" stroke="#334155" stroke-width="0.5"/>
+    <text x="158" y="240" font-size="11" fill="#64748b">Escrow event parsed + matched</text>
+    <text x="562" y="240" text-anchor="end" font-size="11" fill="#22c55e">✓ Verified</text>
+    <text x="158" y="260" font-size="11" fill="#64748b">Webhook dispatch log</text>
+    <text x="562" y="260" text-anchor="end" font-size="11" fill="#22c55e">✓ Emitted</text>
+    <text x="158" y="280" font-size="11" fill="#64748b">Intent state machine update</text>
+    <text x="562" y="280" text-anchor="end" font-size="11" fill="#22c55e">✓ Persisted in memory demo</text>
+  </g>
+</svg>
+
+<div class="step-nav">
+  <div class="step-dots">
+    <span class="active"></span><span></span><span></span><span></span><span></span>
+  </div>
+  <span class="step-label" id="step-label">Step 1 / 5</span>
+  <div style="margin-left:auto;display:flex;gap:8px;">
+    <button onclick="prevStep()">← Prev</button>
+    <button onclick="nextStep()">Next →</button>
+  </div>
+</div>
+</div>
+
+<div id="panel-compare" class="panel">
+<svg width="100%" viewBox="0 0 680 390" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <text x="172" y="36" text-anchor="middle" font-size="13" font-weight="500" fill="#64748b">Legacy Manual Escrow</text>
+  <text x="508" y="36" text-anchor="middle" font-size="13" font-weight="500" fill="#22c55e">PayFi Demo</text>
+  <line x1="340" y1="20" x2="340" y2="370" stroke="#1e293b" stroke-width="1"/>
+
+  <rect x="28" y="55" width="134" height="38" rx="6" fill="#2d0a0a" stroke="#991b1b" stroke-width="0.5"/>
+  <text x="95" y="78" text-anchor="middle" font-size="11" fill="#fca5a5">Invoice Email</text>
+  <line x1="95" y1="93" x2="95" y2="118" stroke="#dc2626" stroke-width="1" marker-end="url(#arr3)"/>
+  <rect x="28" y="118" width="134" height="38" rx="6" fill="#2d0a0a" stroke="#991b1b" stroke-width="0.5"/>
+  <text x="95" y="141" text-anchor="middle" font-size="11" fill="#fca5a5">Off-chain Transfer</text>
+  <line x1="95" y1="156" x2="95" y2="181" stroke="#dc2626" stroke-width="1" marker-end="url(#arr3)"/>
+  <rect x="28" y="181" width="134" height="38" rx="6" fill="#2d0a0a" stroke="#991b1b" stroke-width="0.5"/>
+  <text x="95" y="204" text-anchor="middle" font-size="11" fill="#fca5a5">Spreadsheet Reconcile</text>
+  <line x1="95" y1="219" x2="95" y2="244" stroke="#dc2626" stroke-width="1" marker-end="url(#arr3)"/>
+  <rect x="28" y="244" width="134" height="38" rx="6" fill="#2d0a0a" stroke="#991b1b" stroke-width="0.5"/>
+  <text x="95" y="267" text-anchor="middle" font-size="11" fill="#fca5a5">Manual Dispute Check</text>
+  <line x1="95" y1="282" x2="95" y2="307" stroke="#dc2626" stroke-width="1" marker-end="url(#arr3)"/>
+  <rect x="28" y="307" width="134" height="36" rx="6" fill="#2d0a0a" stroke="#991b1b" stroke-width="0.5"/>
+  <text x="95" y="329" text-anchor="middle" font-size="11" fill="#fca5a5">Delayed Settlement</text>
+
+  <rect x="170" y="60" width="132" height="60" rx="6" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+  <text x="236" y="82" text-anchor="middle" font-size="11" fill="#94a3b8">Trust: manual</text>
+  <text x="236" y="100" text-anchor="middle" font-size="11" fill="#94a3b8">Time: hours / days</text>
+  <text x="236" y="116" text-anchor="middle" font-size="10" fill="#64748b">multiple handoffs</text>
+
+  <rect x="348" y="55" width="134" height="38" rx="6" fill="#0f2744" stroke="#1d4ed8" stroke-width="0.5"/>
+  <text x="415" y="78" text-anchor="middle" font-size="11" fill="#93c5fd">Intent API</text>
+  <circle r="5" fill="#3b82f6" opacity="0">
+    <animateMotion dur="1.8s" repeatCount="indefinite"><mpath href="#cp1"/></animateMotion>
+    <animate attributeName="opacity" values="0;1;1;0" dur="1.8s" repeatCount="indefinite"/>
+  </circle>
+  <path id="cp1" d="M415 93 L 415 181" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arr3)"/>
+
+  <rect x="348" y="181" width="134" height="52" rx="6" fill="#0a2116" stroke="#15803d" stroke-width="0.8"/>
+  <text x="415" y="204" text-anchor="middle" font-size="11" font-weight="500" fill="#86efac">Escrow Contract</text>
+  <text x="415" y="221" text-anchor="middle" font-size="10" fill="#22c55e">verifiable state</text>
+
+  <circle r="5" fill="#f59e0b" opacity="0">
+    <animateMotion dur="1.8s" repeatCount="indefinite" begin="0.9s"><mpath href="#cp2"/></animateMotion>
+    <animate attributeName="opacity" values="0;1;1;0" dur="1.8s" repeatCount="indefinite" begin="0.9s"/>
+  </circle>
+  <path id="cp2" d="M415 233 L 415 307" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arr3)"/>
+
+  <rect x="348" y="307" width="134" height="36" rx="6" fill="#1c0f00" stroke="#b45309" stroke-width="0.5"/>
+  <text x="415" y="329" text-anchor="middle" font-size="11" fill="#fcd34d">Webhook + Audit Log</text>
+
+  <rect x="498" y="60" width="152" height="60" rx="6" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+  <text x="574" y="82" text-anchor="middle" font-size="11" fill="#22c55e">Trust: on-chain state</text>
+  <text x="574" y="100" text-anchor="middle" font-size="11" fill="#22c55e">Time: minutes</text>
+  <text x="574" y="116" text-anchor="middle" font-size="10" fill="#4ade80">single orchestrated path</text>
+
+  <rect x="28" y="360" width="624" height="22" rx="4" fill="#1e293b" opacity="0.6"/>
+  <text x="340" y="375" text-anchor="middle" font-size="10" fill="#475569">Pitch: "From manual reconciliation to verifiable intent-driven settlement with dual-sign release."</text>
+</svg>
+</div>
+
+<script>
+let currentStep = 1;
+const totalSteps = 5;
+
+function setMode(mode) {
+  document.getElementById("panel-all").classList.remove("visible");
+  document.getElementById("panel-step").classList.remove("visible");
+  document.getElementById("panel-compare").classList.remove("visible");
+  document.getElementById("panel-" + mode).classList.add("visible");
+  ["btn-all", "btn-step", "btn-compare"].forEach((id) => {
+    document.getElementById(id).classList.remove("active");
+  });
+  document.getElementById("btn-" + mode).classList.add("active");
+}
+
+function showStep(n) {
+  for (let i = 1; i <= totalSteps; i++) {
+    const el = document.getElementById("s" + i);
+    if (el) el.style.display = (i === n) ? "" : "none";
+  }
+  const dots = document.querySelectorAll(".step-dots span");
+  dots.forEach((d, i) => d.classList.toggle("active", i === n - 1));
+  document.getElementById("step-label").textContent = "Step " + n + " / " + totalSteps;
+}
+
+function nextStep() {
+  if (currentStep < totalSteps) {
+    currentStep++;
+    showStep(currentStep);
+  }
+}
+
+function prevStep() {
+  if (currentStep > 1) {
+    currentStep--;
+    showStep(currentStep);
+  }
+}
+</script>
+</body>
+</html>

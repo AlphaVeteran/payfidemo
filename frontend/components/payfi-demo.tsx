@@ -11,7 +11,13 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
-import { erc20Abi, getAddress, recoverTypedDataAddress } from "viem";
+import { useSearchParams } from "next/navigation";
+import {
+  erc20Abi,
+  getAddress,
+  recoverTypedDataAddress,
+  type PublicClient,
+} from "viem";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   createIntent,
@@ -25,6 +31,25 @@ import {
 } from "@/lib/payfi-api";
 import { domainFromApi, releaseMessageFromApi } from "@/lib/release-typed-data";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
+
+/** Anvil + Rabby：RPC/链不一致或重启链后，旧 tx 会表现为长时间等不到回执。 */
+async function waitTxReceipt(client: PublicClient, hash: `0x${string}`) {
+  try {
+    return await client.waitForTransactionReceipt({
+      hash,
+      timeout: 180_000,
+      pollingInterval: 400,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/timed out|Timed out|timeout/i.test(msg)) {
+      throw new Error(
+        `${msg} · 请检查：1) Rabby 与前端同一 RPC（页面用 ${targetChainId}，常见 http://127.0.0.1:8545）；2) 若刚执行过 reset-local-dev，请重新授权；3) 终端验证：cast receipt ${hash} --rpc-url http://127.0.0.1:8545`,
+      );
+    }
+    throw e;
+  }
+}
 
 const defaultCreateBody = {
   merchant: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -57,14 +82,15 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-neutral-400">{label}</span>
+    <label className="flex flex-col gap-2">
+      <span className="payfi-label">{label}</span>
       {children}
     </label>
   );
 }
 
 export default function PayFiDemo() {
+  const searchParams = useSearchParams();
   const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
   const { connect, connectors, isPending: connectPending } = useConnect();
@@ -86,7 +112,6 @@ export default function PayFiDemo() {
 
   const [intentId, setIntentId] = useState("");
   const [intent, setIntent] = useState<IntentRecord | null>(null);
-  const [formJson, setFormJson] = useState(JSON.stringify(defaultCreateBody, null, 2));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [userSig, setUserSig] = useState<`0x${string}` | null>(null);
@@ -111,6 +136,13 @@ export default function PayFiDemo() {
   useEffect(() => {
     void refreshIntent();
   }, [refreshIntent]);
+
+  useEffect(() => {
+    const fromQuery = searchParams.get("intentId")?.trim();
+    if (fromQuery) {
+      setIntentId(fromQuery);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -163,12 +195,12 @@ export default function PayFiDemo() {
     }
   };
 
+
   const onCreate = async () => {
     setError(null);
     setBusy("create");
     try {
-      const body = JSON.parse(formJson) as Record<string, unknown>;
-      const { intentId: id } = await createIntent(body);
+      const { intentId: id } = await createIntent(defaultCreateBody as Record<string, unknown>);
       setIntentId(id);
       setUserSig(null);
       setMerchantSig(null);
@@ -199,7 +231,8 @@ export default function PayFiDemo() {
         args: [escrow, BigInt(intent.amountTotal)],
       });
       if (!publicClient) throw new Error("no public client");
-      await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await waitTxReceipt(publicClient, hash);
+      if (receipt.status !== "success") throw new Error("approve reverted");
       setLastTx(hash);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -220,7 +253,7 @@ export default function PayFiDemo() {
         data: hint.data,
       });
       if (!publicClient) throw new Error("no public client");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await waitTxReceipt(publicClient, hash);
       if (receipt.status !== "success") throw new Error("deposit reverted");
       await postFundingTx(intent.intentId, hash);
       setLastTx(hash);
@@ -362,14 +395,19 @@ export default function PayFiDemo() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-6 text-neutral-100">
-      <header className="space-y-2 border-b border-neutral-800 pb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">PayFi demo</h1>
-        <p className="text-sm text-neutral-400">
-          Next.js + wagmi on target chain (chainId={targetChainId}). API defaults to{" "}
-          <code className="rounded bg-neutral-900 px-1">127.0.0.1:8787</code>.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 pb-12 pt-6 sm:px-6">
+      <header className="payfi-card space-y-4 p-5">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+            <span className="payfi-title-gradient">PayFi</span>
+            <span className="text-zinc-100"> 用户工作台</span>
+          </h1>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+            chainId {targetChainId} · API{" "}
+            <span className="payfi-code">127.0.0.1:8787</span>
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           {!effectiveIsConnected ? (
             <button
               type="button"
@@ -378,26 +416,20 @@ export default function PayFiDemo() {
                 effectivePreferredConnector &&
                 connect({ connector: effectivePreferredConnector })
               }
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="payfi-btn-primary"
             >
-              {connectPending ? "Connecting…" : connectButtonLabel}
+              {connectPending ? "连接中…" : connectButtonLabel}
             </button>
           ) : (
             <>
-              <span className="font-mono text-xs text-neutral-300">
+              <span className="font-mono text-[11px] text-zinc-300">
                 {effectiveAddress ?? "—"}
               </span>
               {connector && (
-                <span className="text-xs text-neutral-500">
-                  via {connector.name}
-                </span>
+                <span className="text-[11px] text-zinc-500">· {connector.name}</span>
               )}
-              <button
-                type="button"
-                onClick={() => disconnect()}
-                className="rounded-lg border border-neutral-600 px-3 py-1.5 text-sm"
-              >
-                Disconnect
+              <button type="button" onClick={() => disconnect()} className="payfi-btn-ghost">
+                断开
               </button>
             </>
           )}
@@ -406,130 +438,111 @@ export default function PayFiDemo() {
               type="button"
               disabled={switchPending}
               onClick={() => void switchChainAsync({ chainId: targetChainId })}
-              className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white"
+              className="payfi-btn-secondary"
             >
-              Switch to {targetChain.name}
+              切换到 {targetChain.name}
             </button>
           )}
           {effectiveIsConnected && (
-            <span className="text-xs text-neutral-500">
-              chainId {effectiveChainId} {onWrongChain && `(need ${targetChainId})`}
+            <span className="text-[11px] text-zinc-500">
+              {effectiveChainId}
+              {onWrongChain && ` → 需 ${targetChainId}`}
             </span>
           )}
         </div>
       </header>
 
-      {error && (
-        <div className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
+      {error && <div className="payfi-alert-error">{error}</div>}
 
-      <section className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-        <h2 className="text-lg font-medium">Intent</h2>
-        <Field label="intentId">
-          <input
-            className="rounded border border-neutral-700 bg-neutral-900 px-3 py-2 font-mono text-sm"
-            value={intentId}
-            onChange={(e) => setIntentId(e.target.value)}
-            placeholder="paste or create below"
-          />
-        </Field>
+      <section className="payfi-card space-y-4 p-5">
+        <h2 className="text-base font-semibold text-zinc-100">1) 创建意图</h2>
         <button
           type="button"
-          onClick={() => void refreshIntent()}
-          className="rounded-lg border border-neutral-600 px-3 py-2 text-sm"
+          disabled={Boolean(busy)}
+          onClick={() => void onCreate()}
+          className="payfi-btn-primary w-full sm:w-auto"
         >
-          Refresh intent
+          {busy === "create" ? "创建中…" : "创建意图"}
         </button>
+        <Field label="intentId">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              className="payfi-input flex-1 font-mono text-xs"
+              value={intentId}
+              onChange={(e) => setIntentId(e.target.value)}
+              placeholder="创建成功后自动填入，或手动粘贴"
+            />
+            <button
+              type="button"
+              onClick={() => void refreshIntent()}
+              className="payfi-btn-ghost whitespace-nowrap"
+            >
+              刷新意图
+            </button>
+          </div>
+        </Field>
         {intent && (
-          <pre className="max-h-64 overflow-auto rounded bg-neutral-900 p-3 text-xs text-neutral-300">
+          <pre className="max-h-64 overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
             {JSON.stringify(intent, null, 2)}
           </pre>
         )}
       </section>
 
-      <section className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-        <h2 className="text-lg font-medium">1) Create intent (JSON body)</h2>
-        <p className="text-xs text-neutral-500">
-          Replace addresses with your {targetChain.name} user / merchant / asset. Backend
-          must use the same chain (<code>CHAIN_ID={targetChainId}</code>) and escrow.
-        </p>
-        <textarea
-          className="min-h-48 w-full rounded border border-neutral-700 bg-neutral-900 p-3 font-mono text-xs"
-          value={formJson}
-          onChange={(e) => setFormJson(e.target.value)}
-        />
-        <button
-          type="button"
-          disabled={Boolean(busy)}
-          onClick={() => void onCreate()}
-          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {busy === "create" ? "Creating…" : "Create intent"}
-        </button>
-      </section>
-
       {intent && intent.status === "awaiting_funding" && (
-        <section className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-          <h2 className="text-lg font-medium">2) Fund escrow (user wallet)</h2>
-          <p className="text-xs text-neutral-500">
-            Connect as <span className="font-mono">{intent.user}</span>, switch to
-            target chain, then approve token and send <code>createAndDeposit</code>.
+        <section className="payfi-card space-y-4 p-5">
+          <h2 className="text-base font-semibold text-zinc-100">2) 资金托管</h2>
+          <p className="text-xs text-zinc-500">
+            使用 <span className="font-mono text-zinc-400">{intent.user}</span> 连接钱包并切换网络，然后授权并入金。
           </p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               disabled={Boolean(busy) || onWrongChain}
               onClick={() => void onApprove()}
-              className="rounded-lg bg-neutral-200 px-4 py-2 text-sm font-medium text-neutral-900 disabled:opacity-50"
+              className="payfi-btn-secondary"
             >
-              {busy === "approve" ? "Approving…" : "1. Approve ERC20"}
+              {busy === "approve" ? "授权中…" : "1. 授权代币"}
             </button>
             <button
               type="button"
               disabled={Boolean(busy) || onWrongChain}
               onClick={() => void onDeposit()}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="payfi-btn-primary"
             >
-              {busy === "deposit" ? "Depositing…" : "2. createAndDeposit"}
+              {busy === "deposit" ? "入金中…" : "2. 存入托管"}
             </button>
           </div>
           {lastTx && (
-            <p className="font-mono text-xs text-neutral-400">Last tx: {lastTx}</p>
+            <p className="font-mono text-[11px] text-zinc-500">Last tx: {lastTx}</p>
           )}
         </section>
       )}
 
       {intent &&
         (intent.status === "active" || intent.status === "partially_settled") && (
-          <section className="space-y-4 rounded-xl border border-neutral-800 bg-neutral-950 p-4">
-            <h2 className="text-lg font-medium">3) Release (dual EIP-712 sign)</h2>
-            <div className="rounded border border-neutral-800 bg-neutral-900/60 px-3 py-2 text-xs text-neutral-300">
+          <section className="payfi-card space-y-4 p-5">
+            <h2 className="text-base font-semibold text-zinc-100">3) 双签释放</h2>
+            <div className="rounded-xl border border-white/8 bg-black/35 px-3 py-3 text-xs text-zinc-400">
               <div>
-                connected:{" "}
-                <span className="font-mono">{effectiveAddress ?? "not connected"}</span>
+                当前钱包{" "}
+                <span className="font-mono text-zinc-300">{effectiveAddress ?? "未连接"}</span>
               </div>
-              <div>
-                need user: <span className="font-mono">{intent.user}</span>
+              <div className="mt-1">
+                需用户 <span className="font-mono text-zinc-300">{intent.user}</span>
               </div>
-              <div>
-                need merchant: <span className="font-mono">{intent.merchant}</span>
+              <div className="mt-1">
+                需商家 <span className="font-mono text-zinc-300">{intent.merchant}</span>
               </div>
             </div>
-            <ol className="list-decimal space-y-1 pl-5 text-sm text-neutral-400">
+            <ol className="list-decimal space-y-1.5 pl-5 text-sm text-zinc-400">
               <li>
-                Connect wallet as <span className="font-mono text-neutral-200">{intent.user}</span> →{" "}
-                <strong className="text-neutral-200">Sign as user</strong>.
+                用户钱包签名 <strong className="text-zinc-200">Sign as user</strong>
               </li>
               <li>
-                Switch wallet to{" "}
-                <span className="font-mono text-neutral-200">{intent.merchant}</span> →{" "}
-                <strong className="text-neutral-200">Sign as merchant</strong>.
+                切换商家钱包 <strong className="text-zinc-200">Sign as merchant</strong>
               </li>
               <li>
-                <strong className="text-neutral-200">Submit release</strong> (server relays
-                tx with submitter key).
+                <strong className="text-zinc-200">提交释放</strong>（服务端代发交易）
               </li>
             </ol>
             <div className="flex flex-wrap gap-2">
@@ -537,40 +550,36 @@ export default function PayFiDemo() {
                 type="button"
                 disabled={Boolean(busy) || onWrongChain}
                 onClick={() => void onSignUser()}
-                className="rounded-lg border border-neutral-600 px-3 py-2 text-sm disabled:opacity-50"
+                className="payfi-btn-secondary"
               >
-                {busy === "sign-user" ? "Signing…" : "Sign as user"}
+                {busy === "sign-user" ? "签名中…" : "用户签名"}
               </button>
               <button
                 type="button"
                 disabled={Boolean(busy) || onWrongChain}
                 onClick={() => void onSignMerchant()}
-                className="rounded-lg border border-neutral-600 px-3 py-2 text-sm disabled:opacity-50"
+                className="payfi-btn-secondary"
               >
-                {busy === "sign-merchant" ? "Signing…" : "Sign as merchant"}
+                {busy === "sign-merchant" ? "签名中…" : "商家签名"}
               </button>
               <button
                 type="button"
                 disabled={Boolean(busy)}
                 onClick={() => void onReleaseSubmit()}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="payfi-btn-primary"
               >
-                {busy === "submit-release" ? "Submitting…" : "Submit release"}
+                {busy === "submit-release" ? "提交中…" : "提交释放"}
               </button>
             </div>
-            <div className="grid gap-2 text-xs font-mono text-neutral-400">
+            <div className="grid gap-2 font-mono text-[11px] text-zinc-500">
               <span>userSig: {userSig ? `${userSig.slice(0, 18)}…` : "—"}</span>
               <span>
                 merchantSig: {merchantSig ? `${merchantSig.slice(0, 18)}…` : "—"}
               </span>
             </div>
-            {releaseHint && (
-              <div className="rounded border border-amber-800 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
-                {releaseHint}
-              </div>
-            )}
+            {releaseHint && <div className="payfi-alert-warn">{releaseHint}</div>}
             {releaseResult && (
-              <pre className="overflow-auto rounded bg-neutral-900 p-3 text-xs">
+              <pre className="overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
                 {JSON.stringify(releaseResult, null, 2)}
               </pre>
             )}

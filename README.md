@@ -3,7 +3,7 @@
 PayFi 演示后端：支付意图 API、**Mock HSP**（控制台 + `/debug/hsp-outbox`）、Webhook 演示日志。  
 
 - **未配置链**：`funding/tx` 使用内存 `escrowId`；`release/submit` 为占位。  
-- **已配置 Anvil（或任意 RPC）**：设置 `CHAIN_RPC_URL` + `ESCROW_ADDRESS` + `SUBMITTER_PRIVATE_KEY` 后，`funding/tx` 解析 `EscrowCreated` 日志；`release/submit` / `refund` **真实发交易**（由 `SUBMITTER` 付 gas）。
+- **已配置 Anvil（或任意 RPC）**：设置 `CHAIN_RPC_URL` + `ESCROW_ADDRESS` + `SUBMITTER_PRIVATE_KEY`（或 `DEPLOYER_PRIVATE_KEY`）后，`funding/tx` 解析 `EscrowCreated` 日志；`release/submit` / `refund` **真实发交易**（由 `SUBMITTER/DEPLOYER` 付 gas）。
 
 ## 环境
 
@@ -59,9 +59,11 @@ npm run anvil:bootstrap
 CHAIN_ID=31337
 CHAIN_RPC_URL=http://127.0.0.1:8545
 ESCROW_ADDRESS=<PayFiEscrow 地址>
-SUBMITTER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-# 与 intent.user / intent.merchant 对应；网页「Copy cast command」与 scripts/sign-release.mjs 使用
-USER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+# deployer/relayer 与 user 分离
+DEPLOYER_PRIVATE_KEY=<Anvil 账户 #2 私钥>
+SUBMITTER_PRIVATE_KEY=<可选；留空则回退 DEPLOYER_PRIVATE_KEY>
+# 与 intent.user / intent.merchant 对应
+USER_PRIVATE_KEY=<Anvil 账户 #0 私钥>
 MERCHANT_PRIVATE_KEY=<Anvil 账户 #1 私钥>
 ```
 
@@ -71,6 +73,7 @@ MERCHANT_PRIVATE_KEY=<Anvil 账户 #1 私钥>
 |------|------|
 | 用户（#0） | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` |
 | 商家（#1） | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
+| deployer/relayer（#2） | `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC` |
 
 1. `npm run dev` 启动 API。  
 2. `POST /intents` 创建意图（`asset` = MockERC20 地址，`amountTotal` / `amountPerLesson` 用 **wei** 字符串，且满足 `maxReleases * amountPerLesson == amountTotal`）。  
@@ -126,6 +129,22 @@ curl -sS -X POST "$BASE/api/payfi/v1/intents/$INTENT_ID/release/submit" \
 也可：`npm run sign-release -- prepare.json`（文件内容为 `release/prepare` 的 JSON）。
 
 亦可用 `cast wallet sign` 或前端钱包；脚本便于本地一把梭。
+
+### 用 viem 脚本驱动多账户（无需多钱包窗口）
+
+```bash
+# 查看当前角色地址（由 .env 私钥导出）
+npm run local-flow:accounts
+
+# 1) 创建意图（merchant/user 自动取自 .env 私钥）
+npm run local-flow:create
+
+# 2) 用户账户 approve + createAndDeposit（需传 intentId）
+npm run local-flow:fund -- --intent <INTENT_ID>
+
+# 3) user + merchant 本地签名，调用 release/submit
+npm run local-flow:release -- --intent <INTENT_ID>
+```
 
 ## 本地运行
 

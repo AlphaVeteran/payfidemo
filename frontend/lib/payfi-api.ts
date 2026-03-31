@@ -52,6 +52,13 @@ export async function getIntent(intentId: string): Promise<IntentRecord> {
   return data;
 }
 
+export async function listIntents(): Promise<IntentRecord[]> {
+  const res = await fetch(`${apiRoot()}/intents`);
+  const data: { intents?: IntentRecord[]; error?: string } = await res.json();
+  if (!res.ok) throw new Error(data.error || "list intents failed");
+  return data.intents ?? [];
+}
+
 export async function fundingHint(intentId: string): Promise<{
   to: string;
   data: `0x${string}`;
@@ -122,4 +129,18 @@ export async function releaseSubmit(
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || data.detail || "release submit failed");
   return data;
+}
+
+export type OutboxEvent = {
+  id?: string;
+  type: string;
+  payload?: Record<string, unknown>;
+  createdAt?: string;
+};
+
+export async function getOutboxEvents(): Promise<OutboxEvent[]> {
+  const res = await fetch(`${apiRoot()}/debug/hsp-outbox`);
+  const data: { events?: OutboxEvent[]; error?: string } = await res.json();
+  if (!res.ok) throw new Error(data.error || "get outbox failed");
+  return data.events ?? [];
 }

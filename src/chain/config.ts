@@ -39,10 +39,11 @@ function chainFromEnv(): Chain {
 }
 
 export function isChainMode(): boolean {
+  const submitterPk = process.env.SUBMITTER_PRIVATE_KEY?.trim() || process.env.DEPLOYER_PRIVATE_KEY?.trim();
   return Boolean(
     process.env.CHAIN_RPC_URL?.trim() &&
       process.env.ESCROW_ADDRESS?.trim() &&
-      process.env.SUBMITTER_PRIVATE_KEY?.trim(),
+      submitterPk,
   );
 }
 
@@ -56,7 +57,11 @@ export function getPublicClient() {
 }
 
 export function getSubmitterWallet() {
-  const pk = process.env.SUBMITTER_PRIVATE_KEY!.trim() as Hex;
+  const submitterPk = process.env.SUBMITTER_PRIVATE_KEY?.trim() || process.env.DEPLOYER_PRIVATE_KEY?.trim();
+  if (!submitterPk) {
+    throw new Error("missing SUBMITTER_PRIVATE_KEY or DEPLOYER_PRIVATE_KEY");
+  }
+  const pk = submitterPk as Hex;
   const url = process.env.CHAIN_RPC_URL!;
   const chain = chainFromEnv();
   const account = privateKeyToAccount(pk);

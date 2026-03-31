@@ -1,26 +1,280 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --payfi-bg: #121212;
+  --payfi-surface: rgba(30, 30, 36, 0.75);
+  --payfi-border: rgba(255, 255, 255, 0.08);
+  --payfi-muted: #a1a1aa;
+  --payfi-text: #fafafa;
+  --payfi-purple: #a78bfa;
+  --payfi-blue: #38bdf8;
+  --payfi-glow-purple: rgba(139, 92, 246, 0.22);
+  --payfi-glow-blue: rgba(56, 189, 248, 0.14);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--payfi-bg);
+  --color-foreground: var(--payfi-text);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* App shell: deep charcoal + purple/blue ambient glow */
+.payfi-app {
+  min-height: 100vh;
+  background-color: var(--payfi-bg);
+  background-image:
+    radial-gradient(ellipse 85% 55% at 12% -8%, var(--payfi-glow-purple), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 98% 2%, var(--payfi-glow-blue), transparent 50%),
+    radial-gradient(ellipse 50% 30% at 50% 100%, rgba(167, 139, 250, 0.06), transparent 60%);
+  color: var(--payfi-text);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Glass-style cards */
+.payfi-card {
+  border-radius: 1rem;
+  border: 1px solid var(--payfi-border);
+  background: var(--payfi-surface);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.payfi-card-hover {
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.payfi-card-hover:hover {
+  border-color: rgba(167, 139, 250, 0.35);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 24px rgba(139, 92, 246, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Primary CTA: blue → purple pill (matches reference) */
+.payfi-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.35rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #0f172a;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(90deg, #7dd3fc 0%, #60a5fa 35%, #a78bfa 70%, #c084fc 100%);
+  box-shadow:
+    0 4px 20px rgba(96, 165, 250, 0.25),
+    0 0 28px rgba(167, 139, 250, 0.2);
+  transition:
+    filter 0.15s ease,
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+.payfi-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+.payfi-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.payfi-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+a.payfi-btn-primary,
+a.payfi-btn-secondary {
+  text-decoration: none;
+}
+
+/* Secondary / outline */
+.payfi-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.1rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #e4e4e7;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.payfi-btn-secondary:hover:not(:disabled) {
+  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.55);
+}
+.payfi-btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.payfi-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.9rem;
+  border-radius: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #d4d4d8;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.payfi-btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Inputs */
+.payfi-input,
+.payfi-textarea,
+.payfi-select {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 18, 20, 0.85);
+  color: #fafafa;
+  font-size: 0.875rem;
+  padding: 0.6rem 0.85rem;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.payfi-textarea {
+  min-height: 10rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+.payfi-input:focus,
+.payfi-textarea:focus,
+.payfi-select:focus {
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+
+.payfi-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--payfi-muted);
+  letter-spacing: 0.02em;
+}
+
+/* Segmented tabs (Classic-style underline) */
+.payfi-segment {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.payfi-segment button {
+  position: relative;
+  padding: 0.45rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #a1a1aa;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.payfi-segment button[data-active="true"] {
+  color: #38bdf8;
+}
+.payfi-segment button[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0.15rem;
+  transform: translateX(-50%);
+  width: 1.5rem;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #38bdf8, #a78bfa);
+}
+
+/* Links */
+.payfi-link {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #94a3b8;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.payfi-link:hover {
+  color: #e2e8f0;
+}
+
+/* Title accent */
+.payfi-title-gradient {
+  background: linear-gradient(90deg, #e0f2fe 0%, #c4b5fd 50%, #ddd6fe 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Brand mark */
+.payfi-logo-ring {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 50%, #38bdf8 100%);
+  box-shadow: 0 0 24px rgba(139, 92, 246, 0.45);
+}
+
+/* Error / warning */
+.payfi-alert-error {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(127, 29, 29, 0.25);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  color: #fecaca;
+}
+.payfi-alert-warn {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(120, 53, 15, 0.2);
+  padding: 0.75rem 1rem;
+  font-size: 0.75rem;
+  color: #fde68a;
+}
+
+/* Code inline */
+.payfi-code {
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 0.1rem 0.35rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.75em;
+  color: #a5b4fc;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
 }

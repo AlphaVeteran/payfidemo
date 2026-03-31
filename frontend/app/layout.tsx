@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-neutral-950 text-neutral-100 antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} payfi-app antialiased`}
       >
         <Providers>{children}</Providers>
       </body>
