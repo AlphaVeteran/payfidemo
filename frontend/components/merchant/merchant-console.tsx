@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import PayFiLogo from "@/components/ui/payfi-logo";
 import {
-  getOutboxEvents,
+  getSettlementOutboxEvents,
   listIntents,
   type IntentRecord,
-  type OutboxEvent,
+  type SettlementOutboxEvent,
 } from "@/lib/payfi-api";
 
 type TabKey = "dashboard" | "intents" | "history" | "spend";
@@ -56,7 +56,7 @@ export default function MerchantConsole() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [intents, setIntents] = useState<IntentRecord[]>([]);
-  const [events, setEvents] = useState<OutboxEvent[]>([]);
+  const [events, setEvents] = useState<SettlementOutboxEvent[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [userFilter, setUserFilter] = useState("");
   const [spendUser, setSpendUser] = useState("");
@@ -66,7 +66,10 @@ export default function MerchantConsole() {
     setLoading(true);
     setError(null);
     try {
-      const [rows, outbox] = await Promise.all([listIntents(), getOutboxEvents()]);
+      const [rows, outbox] = await Promise.all([
+        listIntents(),
+        getSettlementOutboxEvents(),
+      ]);
       setIntents(rows.slice().reverse());
       setEvents(outbox.slice().reverse());
     } catch (e) {
@@ -275,11 +278,11 @@ export default function MerchantConsole() {
           ) : (
             events.map((e, idx) => (
               <div
-                key={`${e.type}-${idx}`}
+                key={`${e.kind}-${idx}`}
                 className="rounded-xl border border-white/6 bg-black/30 p-3"
               >
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold text-zinc-200">{e.type}</span>
+                  <span className="font-semibold text-zinc-200">{e.kind}</span>
                   <span className="text-[11px] text-zinc-500">{e.createdAt || "-"}</span>
                 </div>
                 <pre className="mt-2 max-h-40 overflow-auto text-[11px] text-zinc-500">

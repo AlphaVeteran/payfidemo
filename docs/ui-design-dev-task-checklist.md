@@ -98,7 +98,7 @@
 
 ## 4.1 首版（不改接口即可）
 
-- [ ] 复用 `GET /intents`、`GET /intents/:id`、`GET /debug/hsp-outbox`
+- [ ] 复用 `GET /intents`、`GET /intents/:id`、`GET /debug/settlement-outbox`
 - [ ] 确认字段稳定输出（status/releaseCount/releasedTotal/expiresAt）
 - [ ] 校验错误码与错误信息可读性（前端直显）
 

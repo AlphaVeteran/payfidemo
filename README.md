@@ -1,9 +1,12 @@
 # payfidemo
 
-PayFi 演示后端：支付意图 API、**Mock HSP**（控制台 + `/debug/hsp-outbox`）、Webhook 演示日志。  
+PayFi 演示后端：支付意图 API、结算消息层（**`SettlementPort`** 接口 + 默认 **`MockSettlementAdapter`**，默认内存 **`SettlementOutbox`**（配置 `DATABASE_URL` 时写 Postgres）+ 控制台 + `GET /api/payfi/v1/debug/settlement-outbox`）、Webhook 演示日志。
+
+**可插拔实现**：当前为本地演示；同一抽象可对接 **HashKey Settlement Protocol（HSP）等** HTTP/SDK——将真实协议封装为实现 `SettlementPort` 的 adapter 即可。
 
 - **未配置链**：`funding/tx` 使用内存 `escrowId`；`release/submit` 为占位。  
 - **已配置 Anvil（或任意 RPC）**：设置 `CHAIN_RPC_URL` + `ESCROW_ADDRESS` + `SUBMITTER_PRIVATE_KEY`（或 `DEPLOYER_PRIVATE_KEY`）后，`funding/tx` 解析 `EscrowCreated` 日志；`release/submit` / `refund` **真实发交易**（由 `SUBMITTER/DEPLOYER` 付 gas）。
+- **可选 Postgres**：`.env` 中设置 `DATABASE_URL`（如 Neon）后，意图与 settlement outbox 持久化；启动时会自动建表，也可单独执行 `npm run db:migrate`。详见 [docs/persistence-postgres.md](docs/persistence-postgres.md)。
 
 ## 环境
 
@@ -244,11 +247,13 @@ curl -sS -X POST "$BASE/api/payfi/v1/debug/intents/$INTENT_ID/expire" | jq .
 curl -sS -X POST "$BASE/api/payfi/v1/intents/$INTENT_ID/refund" | jq .
 ```
 
-### 7) Mock HSP 出站记录
+### 7) Settlement outbox（调试）
 
 ```bash
-curl -sS "$BASE/api/payfi/v1/debug/hsp-outbox" | jq .
+curl -sS "$BASE/api/payfi/v1/debug/settlement-outbox" | jq .
 ```
+
+（兼容旧路径：`/debug/hsp-outbox` 与上述返回相同 JSON。）
 
 ### 8) 列出全部意图
 

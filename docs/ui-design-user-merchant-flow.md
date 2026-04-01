@@ -32,7 +32,7 @@
 - `POST /api/payfi/v1/intents/:id/release/prepare`
 - `POST /api/payfi/v1/intents/:id/release/submit`
 - `POST /api/payfi/v1/intents/:id/refund`
-- `GET /api/payfi/v1/debug/hsp-outbox`
+- `GET /api/payfi/v1/debug/settlement-outbox`
 
 ---
 

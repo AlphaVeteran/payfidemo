@@ -3,14 +3,14 @@
 本文把 **链上多笔 `escrowId` 托管合约** 挂进 **PayFi 故事**：支付意图、状态同步、商户回调。面向黑客松 / 作品集演示，约定如下：
 
 - **链上默认**：**Base 测试网**（如 Base Sepolia）部署 Escrow、使用测试 USDC（或团队选定的测试 ERC20）；RPC、水龙头与钱包工具链成熟，便于完成 payfidemo。
-- **HSP**：**默认 Mock**（`MockHSPAdapter`），接口 **可插拔**；文档说明如何替换为真实 **HashKey Settlement Protocol (HSP)** HTTP/SDK，不因 HSP SDK 成熟度阻塞 demo。
+- **结算消息层**：代码侧为 **`SettlementPort`** + 默认 **`MockSettlementAdapter`** + 内存 **`SettlementOutbox`**（可换持久化表）；**可插拔** 对接 **HashKey Settlement Protocol（HSP）等** HTTP/SDK，不因某一家 SDK 成熟度阻塞 demo。
 - **真实协议 SDK（可选）**：若需要对外展示「已接开放支付标准」，可 **并行** 集成 **[Coinbase x402](https://github.com/coinbase/x402)**（HTTP 402 + 客户端/服务端库），作为 **PayFi 技术佐证**；与 Escrow **并列演示**，不必强行把 x402 与每一笔 `release` 绑在同一交易里。
 
 ---
 
 ## 1. 一句话叙事（对外）
 
-> **用户**在商户处购买「课包 / 里程碑服务」，通过 **PayFi 支付意图** 锁定资金；**每一节课结束后**，用户与商家在应用内各确认一次，系统校验 **双签** 后在链上 **释放一期结算**；**周期届满** 未释放部分 **自动退回用户**。商户 ERP 通过 **Webhook** 接收与 **HSP 风格一致** 的「请求—确认—回执」状态；链上结算跑在 **Base 测试网**，HSP 侧 **默认模拟**，后续可换真实 HSP。可选地，用 **x402** 演示「API / 机器支付」类 PayFi 能力，作为补充叙事。
+> **用户**在商户处购买「课包 / 里程碑服务」，通过 **PayFi 支付意图** 锁定资金；**每一节课结束后**，用户与商家在应用内各确认一次，系统校验 **双签** 后在链上 **释放一期结算**；**周期届满** 未释放部分 **自动退回用户**。商户 ERP 通过 **Webhook** 接收与 **结算消息层** 一致的「请求—确认—回执」状态；链上结算跑在 **Base 测试网**，出站事件默认经 **`SettlementOutbox`**（Mock），后续可换 **HashKey Settlement Protocol 等** 真实 adapter。可选地，用 **x402** 演示「API / 机器支付」类 PayFi 能力，作为补充叙事。
 
 链上 escrow 是 **结算执行层**；PayFi 演示重点在 **意图 ID、状态机、幂等回调**，而不是「只有合约」。
 
@@ -22,10 +22,10 @@
 |------|----------|------|
 | **L2 / 链** | **Base Sepolia**（或当前官方推荐的 Base 测试网） | 合约、`chainId`、区块浏览器链接写进 README；主网仅在有明确需求时再切。 |
 | **资产** | 测试网 **USDC** 或标准 **ERC20 Mock** | 与 `amountTotal` 等字段 decimals 一致即可。 |
-| **结算消息（HSP 角色）** | **Mock**：控制台 + DB `hsp_outbox` | 对外说明：**`PayFiSettlementPort` 实现可替换**，真实 HSP 就绪后换 `HttpHSPClient` 即可。 |
+| **结算消息层** | **Mock**：控制台 + DB（演示）`settlement_outbox` | **`SettlementPort` 实现可替换**；真实环境可接 **HashKey Settlement Protocol** 等，换 `HttpSettlementClient` / 厂商 SDK 适配器即可。 |
 | **开放支付标准（佐证）** | **可选 [x402](https://github.com/coinbase/x402)** | 例如：保护某只读 API（报价、条款 PDF、intent 元数据），返回 402 → 客户端按 x402 完成支付后再访问；与 **Escrow 课包释放** 可分两条故事线演示，降低耦合。 |
 
-**环境变量建议**：`CHAIN_ID`、`RPC_URL`、`ESCROW_ADDRESS`、`USDC_ADDRESS`、`HSP_ADAPTER=mock|http`、`X402_ENABLED=true|false`（示例命名，实现时与代码对齐）。
+**环境变量建议**：`CHAIN_ID`、`RPC_URL`、`ESCROW_ADDRESS`、`USDC_ADDRESS`、`SETTLEMENT_ADAPTER=mock|http`（示例命名，实现时与代码对齐）、`X402_ENABLED=true|false`。
 
 ---
 
@@ -33,10 +33,10 @@
 
 | 概念 | 职责 | 备注 |
 |------|------|------|
-| **Payment Intent（支付意图）** | 业务侧订单：谁付、谁收、总额、单笔释放额、次数、周期 | 链下主记录；可与「HSP 消息」一一对应（Mock 时本地生成） |
+| **Payment Intent（支付意图）** | 业务侧订单：谁付、谁收、总额、单笔释放额、次数、周期 | 链下主记录；可与经 **`SettlementPort`** 发出的消息一一对应（Mock 时本地生成） |
 | **`intentId`** | UUID 或 `bytes32`，全系统主键 | API、Webhook、UI 都用它 |
 | **`escrowId`** | 链上 `uint256` | 创建托管成功后写入意图 |
-| **HSP Adapter** | 把内部状态变化 **映射为** HSP 式 `request / confirm / receipt` 消息（或仅日志） | **默认 Mock**；**可插拔** 真实 HSP；SDK 不足时不阻塞，链上仍在 Base 测试网完成 |
+| **SettlementAdapter** | 把内部状态变化 **映射为** 出站结算事件（开放协议 / 厂商 HTTP / 或仅日志） | **默认 `MockSettlementAdapter`**；**可插拔** 真实实现；SDK 不足时不阻塞，链上仍在 Base 测试网完成 |
 | **x402（可选）** | HTTP **402 Payment Required** + 官方多语言 SDK，常用于 API / Agent 付费 | **并行** 接入作 PayFi 佐证；与 Escrow 解耦，见 §1.1 |
 | **Settlement（结算）** | 单笔 `release`：双签 + 链上转账给商户 | 与「一节课 / 一里程碑」对齐 |
 | **合同锚点（Contract anchor）** | 用 **哈希 + 版本号** 把支付意图绑到「当时约定的那版条款」，不存全文上链 | 轻量：不替代律师合同，只增强可追溯性 |
@@ -108,8 +108,8 @@
 
 ```
 ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Web / dApp │────▶│  PayFi API       │────▶│ MockHSPAdapter  │
-│  (用户/商户) │     │  (Node/Next)     │     │ (可插拔真实HSP)  │
+│  Web / dApp │────▶│  PayFi API       │────▶│ MockSettlementAdapter │
+│  (用户/商户) │     │  (Node/Next)     │     │ (可插拔真实协议)   │
 └──────┬──────┘     └────────┬─────────┘     └────────┬────────┘
        │                     │                        │
        │              (可选) x402 中间件 / facilitator │
@@ -124,7 +124,7 @@
 ```
 
 - **PayFi API**：权威状态机、存储 `intents`、触发 Webhook、可选代提交链上 tx（或返回 data 由前端发）。
-- **MockHSPAdapter**（默认）：`emitMessage(type, payload)` → 演示控制台 + 可选写 DB 表 `hsp_outbox`；**不调用外网**；真实 HSP 就绪后换实现类即可（**同一 `PayFiSettlementPort` 接口**）。
+- **`MockSettlementAdapter`**（默认）：实现 **`SettlementPort.emit(kind, payload)`** → 写内存 **`SettlementOutbox`** + 控制台；**不调用外网**；真实协议就绪后换实现类即可（**同一 `SettlementPort` 接口**）。
 - **x402（可选）**：在独立路由或服务上启用，用于「付费再访问」的 API；详见 §1.1 与 §14。
 - **Escrow 合约**：**默认部署于 Base 测试网**；`createAndDeposit`、`releaseBySignatures`、`refund`、`IDisputeModule` 占位。
 
@@ -152,11 +152,11 @@
 
 ---
 
-## 5. HSP 风格消息（Mock 映射）
+## 5. 结算事件（`SettlementOutbox` / Mock 映射）
 
-不绑定真实 HSP 字段名；用 **三类消息** 对齐 PayFi 叙事，便于以后替换：
+不绑定某一开放协议字段名；用下列 **事件 kind** 对齐 PayFi 叙事，便于以后替换为 **HashKey Settlement Protocol 等**：
 
-| 内部事件 | HSP 类比 | 说明 |
+| 内部事件 | 开放结算协议类比 | 说明 |
 |----------|----------|------|
 | `INTENT_CREATED` | Payment **Request** | 商户侧「要价」：金额、周期、收款方 |
 | `INTENT_FUNDED` | **Confirm**（资金到位） | 用户完成 `deposit` |
@@ -206,7 +206,7 @@
 ```
 
 **Response**：`{ "intentId": "uuid", "status": "awaiting_funding" }`  
-副作用：Mock HSP 发 `INTENT_CREATED`。
+副作用：经 `SettlementPort` 写入 `INTENT_CREATED`（Mock 入 `SettlementOutbox`）。
 
 ---
 
@@ -215,7 +215,7 @@
 用户已广播充值 tx 后上报（或 indexer 回调）。
 
 **Body**：`{ "txHash": "0x..." }`  
-**行为**：校验 receipt → 读 `escrowId` → `status=active`。Mock HSP：`INTENT_FUNDED`。
+**行为**：校验 receipt → 读 `escrowId` → `status=active`。`SettlementPort`：`INTENT_FUNDED`。
 
 ---
 
@@ -249,7 +249,7 @@
 ### `POST /intents/:intentId/release/submit`
 
 **Body**：`{ "userSig": "0x", "merchantSig": "0x" }`  
-**行为**：调用合约 `releaseBySignatures`（服务端带 `relayer` 或返回 raw tx 给前端）。成功后 Mock HSP + **Webhook** `SETTLEMENT_RELEASED`。
+**行为**：调用合约 `releaseBySignatures`（服务端带 `relayer` 或返回 raw tx 给前端）。成功后 **`SettlementOutbox` / Webhook** `SETTLEMENT_RELEASED`。
 
 ---
 
@@ -305,7 +305,7 @@ sequenceDiagram
   participant U as 用户
   participant M as 商户
   participant API as PayFi API
-  participant H as MockHSP
+  participant H as SettlementPort
   participant C as Escrow 合约
 
   M->>API: POST /intents
@@ -346,7 +346,7 @@ sequenceDiagram
 
 - `event_id` (PK), `intent_id`, `payload_json`, `status`, `attempts`, `last_error`
 
-**`hsp_outbox`**（可选，演示「消息层」）
+**`settlement_outbox`**（可选，演示「消息层」）
 
 - `id`, `intent_id`, `kind`, `payload_json`, `created_at`
 
@@ -365,7 +365,7 @@ sequenceDiagram
 | 做 | 暂缓 |
 |----|------|
 | **Base 测试网** + 单 ERC20（测试 USDC 或 Mock） | 多链、主网 |
-| **Mock HSP** + 控制台日志 + 文档声明可插拔 | 真实 HSP HTTP（待 SDK/文档就绪） |
+| **`MockSettlementAdapter`** + `SettlementOutbox` + 文档声明可插拔 | 真实 **HashKey Settlement Protocol 等** HTTP（待 SDK/文档就绪） |
 | （可选）**x402** 保护 1～2 个只读 API 作 PayFi 佐证 | 完整 x402 产品化与多 facilitator |
 | 单链 + 一种 ERC20 | 多代币路由 |
 | 用户/商户各在网页连钱包签名 | Gasless meta-tx |
@@ -381,14 +381,30 @@ sequenceDiagram
 
 ---
 
-## 14. 可插拔 HSP 与并行 x402
+## 14. 可插拔结算层（`SettlementPort`）与并行 x402
 
-### 14.1 `PayFiSettlementPort`（HSP 侧统一接口）
+### 14.1 本仓库的 `SettlementPort`（与扩展形态）
 
-将 `MockHSPAdapter` 与未来的 `HttpHSPClient` **都实现**同一接口，例如：
+payfidemo **当前** 使用窄接口（与 `src/settlement/settlementPort.ts` 一致），通过 **event kind + payload** 出站：
 
 ```ts
-/** 合同锚点：所有通知可携带，便于 HSP / ERP 对账 */
+export type SettlementEventKind =
+  | "INTENT_CREATED"
+  | "INTENT_FUNDED"
+  | "SETTLEMENT_RELEASED"
+  | "INTENT_REFUNDED";
+
+export interface SettlementPort {
+  emit(kind: SettlementEventKind, payload: unknown): string;
+}
+```
+
+**兼容 HashKey Settlement Protocol 等实现**：新增适配器类（例如 `HashKeySettlementAdapter`）实现同一 `SettlementPort`，在 `emit` 内把 `kind`/`payload` **映射为** 对方 HTTP/SDK 的请求体；失败时写入持久化 **`settlement_outbox`** 做重试。
+
+若希望更细粒度的应用 API，也可在同一适配器内封装为显式方法（等价于多路由到 `emit`）：
+
+```ts
+/** 合同锚点：所有通知可携带，便于开放协议 / ERP 对账 */
 interface AgreementAnchor {
   agreementHash: `0x${string}`;
   termsVersion: string;
@@ -405,9 +421,9 @@ interface PayFiSettlementPort {
 }
 ```
 
-**真实 HSP 接入时**：在以上方法内 **映射为对方 API 的 request body**，失败写入 `hsp_outbox` 做重试。链上 Escrow **部署仍默认 Base 测试网**，合约接口 **不必** 为换 HSP 而改；生产上要审计 **谁有权调 `release`** 是否与 HSP 确认一致（**oracle / relayer 规则** 超出本 demo 范围）。
+链上 Escrow **部署仍默认 Base 测试网**，合约接口 **不必** 为换结算适配器而改；生产上要审计 **谁有权调 `release`** 是否与协议侧确认一致（**oracle / relayer 规则** 超出本 demo 范围）。
 
-**HSP SDK 不足时**：保持 **Mock + 本接口**，交付物仍完整；对外说明「消息层可切换」即可。
+**厂商 SDK 未就绪时**：保持 **`MockSettlementAdapter` + `SettlementPort`**，交付物仍完整；对外说明「消息层可切换」即可。
 
 ### 14.2 并行 x402（PayFi 技术佐证）
 
@@ -419,4 +435,4 @@ interface PayFiSettlementPort {
 
 ### 14.3 链迁移（若未来必须）
 
-若后续要求 **HashKey Chain** 等，仅须：**重新部署 Escrow**、更新 `chainId` / RPC / 浏览器链接；**PayFi API 状态机与 Webhook 模型可保持不变**；HSP 与 x402 仍通过各自适配层切换。
+若后续要求 **HashKey Chain** 等，仅须：**重新部署 Escrow**、更新 `chainId` / RPC / 浏览器链接；**PayFi API 状态机与 Webhook 模型可保持不变**；**`SettlementPort` 实现** 与 x402 仍通过各自适配层切换。

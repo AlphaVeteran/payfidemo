@@ -117,8 +117,8 @@
   - [ ] 如何确保不会重复释放
 
 ### Day 12
-- [ ] 实现 `MockHSPAdapter`
-- [ ] 建 `hsp_outbox`（日志或表）
+- [ ] 实现 `MockSettlementAdapter`（`SettlementPort`）
+- [ ] 建 `settlement_outbox`（日志或表）
 - [ ] 开源学习：`x402` 402 challenge 与重试流程
 - [ ] 长文选题（3）：
   - [ ] Mock 不是偷懒，是交付策略

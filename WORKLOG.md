@@ -5,8 +5,8 @@
 - 目标：`PayFi` 托管支付演示，主链路是 `Intent -> Funding -> Release -> Refund`，默认演示链为 Base Sepolia，当前本地联调链为 Anvil `31337`。
 - 合约层：`contracts/PayFiEscrow.sol`，核心能力包括多 `escrowId`、`createAndDeposit`、EIP-712 双签 `releaseBySignatures`、到期 `refund`、可选 `disputeModule`。
 - API 层：`src/server.ts` + `src/routes/intents.ts`，提供支付意图 CRUD、funding 确认、release prepare/submit、refund、debug 接口。
-- 状态层：当前使用内存存储（`src/store/memory.js`），覆盖 `awaiting_funding -> active -> partially_settled/settled/refunded`。
-- 集成层：`MockHSP` 事件出站 + webhook stub（含幂等与重放考虑文档），支持链上模式与纯演示模式双轨运行。
+- 状态层：通过 **`intentStore`**（`src/store/intentStore.ts`）统一读写意图；未配置数据库时使用内存（`src/store/memory.js`），配置 **`DATABASE_URL`** 时使用 Postgres（`src/store/postgresIntent.ts` + 启动迁移）。状态覆盖 `awaiting_funding -> active -> partially_settled/settled/refunded`。
+- 集成层：`SettlementPort` / `MockSettlementAdapter` / `SettlementOutbox` 事件出站 + webhook stub（含幂等与重放考虑文档），支持链上模式与纯演示模式双轨运行。
 
 ## 当前合约地址
 
@@ -26,7 +26,7 @@
 ## 待解决的问题
 
 - 补充并固定 Base Sepolia 实际部署地址（含区块浏览器链接），同步到 `README.md` 和提交材料。
-- 将当前内存存储替换为持久化存储（至少 `intents`、`hsp_outbox`、`webhook_deliveries`），避免服务重启丢状态。
+- 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**webhook 投递记录**等仍缺可靠落库与重试闭环。
 - 完成 webhook 投递可靠性闭环：签名/HMAC、重试策略、幂等去重落库与可观测性。
 - 完成前端主路径（创建意图、充值提示、双签提交、状态展示、退款操作）并打通演示录屏。
 - 评估并按计划决定是否接入 `x402`（建议先保护 1-2 条只读 API，保留环境开关）。
@@ -37,16 +37,67 @@
 - 不在链上签名结构中加入 `termsVersion`（仅保留在 intent/webhook 语义层）。
 - 不混淆 `intentId` 与 `escrowId`：前者是业务标识，后者是链上托管实例标识。
 - 不把真实生产私钥、密钥或敏感配置提交到仓库；`.env` 仅允许本地测试用途。
-- 不在截止前扩大范围到多链/主网/完整 HSP 真联调，优先保证单链路稳定可演示。
+- 不在截止前扩大范围到多链/主网/完整第三方结算协议真联调，优先保证单链路稳定可演示。
 
 ## 当日记录（按日期倒序：最新在上）
+
+## 当日记录（2026-04-01）
+
+【今日完成】
+- **可选 Postgres 持久化**：`.env` / **`.env.example`** 增加 **`DATABASE_URL`** 说明；依赖 **`pg`**；新增 **`npm run db:migrate`**（`src/db/migrate-cli.ts`）；**`src/server.ts`** 启动时若启用持久化则 **`runMigrations`**，**`/health`** 返回 **`persistence`: `postgres` | `memory`**；进程退出时 **`closePgPool`**，并处理 **SIGINT/SIGTERM**。
+- **意图存储抽象**：**`src/store/intentStore.ts`** 在内存与 Postgres 之间切换；**`src/store/postgresIntent.ts`** 与 **`src/db/`**（连接池、事务 **`withPgTransaction`**、迁移 SQL）承载表结构。
+- **结算出站重构**：移除 **`src/services/mockHsp.ts`**，改为 **`src/settlement/`**：**`SettlementPort`**、默认 **`MockSettlementAdapter`**（内存 outbox）、**`appendSettlementOutbox` / `getSettlementOutbox`**（Postgres 路径写 **`settlement_outbox`**）；控制台日志 **`logSettlementEvent`**。
+- **路由与事务**：**`src/routes/intents.ts`** 全面改为 **`async`** 经 **`intentStore`** 读写；在持久化模式下，**create**、**demo funding**、**demo release/submit**、**demo refund** 等路径对 **intent + outbox** 使用 **同一 PG 事务** 写入（链上成功路径仍 **`settlementAdapter.emit`** 与现有 webhook 行为衔接，细节以代码为准）。
+- **调试 API**：新增 **`GET .../debug/settlement-outbox`**；保留 **`/debug/hsp-outbox`** 为兼容别名；**debug expire** 走 **`intentStore`**。
+- **文档**：新增 **`docs/persistence-postgres.md`**；**`README.md`**、**`docs/payfi-escrow-architecture.md`**、**`docs/3-week-dev-plan.md`**、**`docs/hackathon-2045-dev-schedule.md`**、流程页与 UI 设计 checklist 等同步术语与路径；删除冗余 **`docs/3-week-dev-plan-lite.md`**。
+- **前端**：**`payfi-api`** 使用 **`getSettlementOutboxEvents`** 与 **`SettlementOutboxEvent`**（字段 **`kind`**）；**`intent-detail`** / **`merchant-console`** 时间线与商户历史面板与新 API 对齐。
+
+【未完成】
+- **webhook** 可靠投递、Base Sepolia 地址固化、正式演示录屏等待解决问题清单中其余项。
+- 建议在配置 **`DATABASE_URL`** 的环境跑一遍 **create → fund → release** 与 **`GET /debug/settlement-outbox`**，并把验证摘要记入下一日 WORKLOG。
+
+【代码证据】
+- DB 与迁移：`src/db/pool.ts`、`src/db/migrate.ts`、`src/db/migrate-cli.ts`、`src/db/withTransaction.ts`
+- 存储：`src/store/intentStore.ts`、`src/store/postgresIntent.ts`、`src/store/memory.js`（仍为非 PG 默认实现）
+- 结算：`src/settlement/settlementPort.ts`、`mockSettlementAdapter.ts`、`settlementOutbox.ts`、`postgresOutbox.ts`、`logSettlementEvent.ts`
+- 入口与路由：`src/server.ts`、`src/routes/intents.ts`
+- 前端：`frontend/lib/payfi-api.ts`、`frontend/components/intent/intent-detail.tsx`、`frontend/components/merchant/merchant-console.tsx`
+- 说明：`docs/persistence-postgres.md`、`README.md`、`.env.example`
+
+【明日第一任务建议（只能一个）】
+- 在启用 **`DATABASE_URL`** 的实例上跑通 **`./scripts/reset-local-dev.sh`**（或等价启动）后，用 **`local-flow:run`** 或前端全链路各走一遍，确认 **API 重启后 intent 与 outbox** 仍可查询。
+
+## 当日记录（2026-03-31）
+
+【今日完成】
+- 已将当日改动推送 GitHub：`70b9c9d` — `feat(devx): add multi-profile wallet flow and script-driven local testing`（多账户脚本化联调、Chrome 分角色 profile、reset 健康检查、用户/商户控制台与签名路径打磨）。
+- 新增 **`scripts/local-flow.mjs`**（viem）：支持 `accounts` / `create` / `fund` / `release` / `release-until-settled` / `run`；在根目录 **`package.json`** 暴露对应 **`local-flow:*`** npm 脚本，便于无 UI 的端到端回归。
+- 新增 **`scripts/open-role-profiles.sh`**：按用户/商户隔离 Chrome 用户数据目录，降低同浏览器多钱包会话干扰。
+- **`scripts/reset-local-dev.sh`**：补充健康检查与稳定性相关调整，便于一键恢复 Anvil + API 联调环境。
+- **前端**：角色入口与独立路由（`/user`、`/merchant`、`/intent/[intentId]`）；**`merchant-console`** / **`intent-detail`** / **`intent-status-header`** 等组件；**`payfi-demo`** 与 **`globals.css`** 调整；**`payfi-api`** 封装扩展；**`layout`** / 首页衔接微调。
+- **文档与静态流程页**：**`docs/web3-local-testing-guide.md`**；UI 设计说明 **`docs/ui-design-user-merchant-flow.md`**、**`docs/ui-design-dev-task-checklist.md`**；中英流程 **`docs/payfidemo_flow_en.html`** / **`docs/payfidemo_flow_zh.html`**；**`README.md`**、**`.env.example`** 同步更新。
+- **链模块**：**`src/chain/config.ts`** 小幅调整，与本地多账户/脚本联调路径对齐。
+
+【未完成】
+- 「待解决的问题」中的 Base Sepolia 地址固化、持久化存储、webhook 可靠投递、正式演示录屏等仍待推进。
+- 可在下一工作日补记：`npm run typecheck` 与 **`local-flow:run`**（或分步）最短回归命令与返回摘要。
+
+【代码证据】
+- 提交：`70b9c9d`（远程分支与本地一致时可 `git show 70b9c9d --stat` 核对文件列表）。
+- 脚本与入口：`scripts/local-flow.mjs`、`scripts/open-role-profiles.sh`、`scripts/reset-local-dev.sh`、`package.json`
+- 前端：`frontend/app/user/page.tsx`、`frontend/app/merchant/page.tsx`、`frontend/app/intent/[intentId]/page.tsx`、`frontend/components/home/role-entry.tsx`、`frontend/components/merchant/merchant-console.tsx`、`frontend/components/intent/intent-detail.tsx`、`frontend/components/shared/intent-status-header.tsx`、`frontend/lib/payfi-api.ts`
+- 文档：`docs/web3-local-testing-guide.md`、`README.md`、`.env.example`
+- 链：`src/chain/config.ts`
+
+【明日第一任务建议（只能一个）】
+- 在本机执行一次 **`./scripts/reset-local-dev.sh`** 后跑 **`npm run local-flow:run`**（或 `create → fund → release` 分步），并打开双 profile 走一遍前端签名流程，把关键命令输出记入下一日 WORKLOG。
 
 ## 当日记录（2026-03-26）
 
 【今日完成】
 - 后端 `intents` 主链路继续完善：围绕 `create -> funding -> release -> refund` 的状态流转、参数校验与链上/本地 demo 双模式分支完成联调收敛。
 - `funding/tx` 增强链上一致性校验：基于回执解析 `EscrowCreated` 后，对 `user/merchant/asset/amountTotal/agreementHash` 与 intent 做严格比对，异常返回明确错误信息。
-- `release/prepare` + `release/submit` 路径补齐可执行性：增加 releaseNonce 同步检查、提交后 `releaseCount/releasedTotal/status` 回写，并继续触发 `MockHSP` 与 webhook 事件。
+- `release/prepare` + `release/submit` 路径补齐可执行性：增加 releaseNonce 同步检查、提交后 `releaseCount/releasedTotal/status` 回写，并继续触发结算 outbox 与 webhook 事件。
 - 本地调试控制台（`web/`）增强：补充 funding 与 release 一键复制命令（calldata / cast / funding curl / prepare-sign-submit pipeline）与状态刷新展示，降低手工串联成本。
 - 本地重置脚本 `scripts/reset-local-dev.sh` 升级：支持清理旧进程、启动 anvil、bootstrap 合约、自动回写 `.env` 关键配置并拉起 API，形成一键恢复联调环境流程。
 - 新增 `frontend/` Next.js + wagmi 前端工程骨架：已接入钱包连接、create intent、approve+deposit、双签 release、release submit 的主路径页面与 API 封装。
@@ -123,7 +174,7 @@
 - 文件：`web/styles.css` -> 新增命令缓冲区样式与交互展示样式。
 - 文件：`src/routes/intents.ts` -> `funding/tx` 增加 txHash 严格校验；链上成功路径 side-effect 加防护。
 - 文件：`src/server.ts` -> 挂载静态 web 页面；增加端口占用提示与未捕获异常日志。
-- 文件：`src/services/mockHsp.ts`、`src/services/webhookStub.ts`、`src/util/safeJson.ts` -> 增加安全 JSON 序列化，避免 BigInt 导致日志崩溃。
+- 文件：`src/settlement/`（`settlementPort.ts`、`settlementOutbox.ts`、`mockSettlementAdapter.ts`）、`src/services/webhookStub.ts`、`src/util/safeJson.ts` -> 增加安全 JSON 序列化，避免 BigInt 导致日志崩溃。
 - 文件：`scripts/reset-local-dev.sh`、`scripts/stop-local-dev.sh` -> 一键重置/停止本地 Anvil + API 环境。
 - 文件：`README.md`、`.env.example`、`scripts/sign-release.mjs` -> 同步更新本地联调流程、私钥变量、命令示例与脚本文档。
 - 文件：`WORKLOG.md`、`DAILY_AI_WORKFLOW_TEMPLATE.md` -> 纳入本次提交范围并形成流程记录。

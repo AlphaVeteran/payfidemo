@@ -131,16 +131,16 @@ export async function releaseSubmit(
   return data;
 }
 
-export type OutboxEvent = {
-  id?: string;
-  type: string;
+export type SettlementOutboxEvent = {
+  id: string;
+  kind: string;
   payload?: Record<string, unknown>;
-  createdAt?: string;
+  createdAt: string;
 };
 
-export async function getOutboxEvents(): Promise<OutboxEvent[]> {
-  const res = await fetch(`${apiRoot()}/debug/hsp-outbox`);
-  const data: { events?: OutboxEvent[]; error?: string } = await res.json();
-  if (!res.ok) throw new Error(data.error || "get outbox failed");
+export async function getSettlementOutboxEvents(): Promise<SettlementOutboxEvent[]> {
+  const res = await fetch(`${apiRoot()}/debug/settlement-outbox`);
+  const data: { events?: SettlementOutboxEvent[]; error?: string } = await res.json();
+  if (!res.ok) throw new Error(data.error || "get settlement outbox failed");
   return data.events ?? [];
 }

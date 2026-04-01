@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { getIntent, getOutboxEvents, type IntentRecord, type OutboxEvent } from "@/lib/payfi-api";
+import {
+  getIntent,
+  getSettlementOutboxEvents,
+  type IntentRecord,
+  type SettlementOutboxEvent,
+} from "@/lib/payfi-api";
 import IntentStatusHeader from "@/components/shared/intent-status-header";
 import PayFiLogo from "@/components/ui/payfi-logo";
 
@@ -21,7 +26,7 @@ export default function IntentDetail({ intentId }: Props) {
   const params = useSearchParams();
   const role = roleFromSearch(params.get("role"));
   const [intent, setIntent] = useState<IntentRecord | null>(null);
-  const [events, setEvents] = useState<OutboxEvent[]>([]);
+  const [events, setEvents] = useState<SettlementOutboxEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +34,10 @@ export default function IntentDetail({ intentId }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const [i, outbox] = await Promise.all([getIntent(intentId), getOutboxEvents()]);
+      const [i, outbox] = await Promise.all([
+        getIntent(intentId),
+        getSettlementOutboxEvents(),
+      ]);
       setIntent(i);
       setEvents(outbox);
       window.localStorage.setItem("payfi.lastIntentId", intentId);
@@ -145,11 +153,11 @@ export default function IntentDetail({ intentId }: Props) {
               <div className="space-y-2">
                 {timeline.map((e, idx) => (
                   <div
-                    key={`${e.type}-${idx}`}
+                    key={`${e.kind}-${idx}`}
                     className="rounded-xl border border-white/6 bg-black/30 p-3"
                   >
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-zinc-200">{e.type}</span>
+                      <span className="font-medium text-zinc-200">{e.kind}</span>
                       <span className="text-zinc-500">{e.createdAt || "-"}</span>
                     </div>
                     <pre className="mt-2 max-h-36 overflow-auto text-[11px] text-zinc-500">
