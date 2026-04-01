@@ -130,3 +130,15 @@ button:hover {
   overflow-x: auto;
   white-space: pre-wrap;
 }
+
+.release-state-hint {
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+  font-size: 0.88rem;
+}
+
+.release-state {
+  margin-top: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}

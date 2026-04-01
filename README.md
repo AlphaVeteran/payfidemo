@@ -1,9 +1,12 @@
 # payfidemo
 
-PayFi 演示后端：支付意图 API、**Mock HSP**（控制台 + `/debug/hsp-outbox`）、Webhook 演示日志。  
+PayFi 演示后端：支付意图 API、结算消息层（**`SettlementPort`** 接口 + 默认 **`MockSettlementAdapter`**，默认内存 **`SettlementOutbox`**（配置 `DATABASE_URL` 时写 Postgres）+ 控制台 + `GET /api/payfi/v1/debug/settlement-outbox`）、Webhook 演示日志。
+
+**可插拔实现**：当前为本地演示；同一抽象可对接 **HashKey Settlement Protocol（HSP）等** HTTP/SDK——将真实协议封装为实现 `SettlementPort` 的 adapter 即可。
 
 - **未配置链**：`funding/tx` 使用内存 `escrowId`；`release/submit` 为占位。  
-- **已配置 Anvil（或任意 RPC）**：设置 `CHAIN_RPC_URL` + `ESCROW_ADDRESS` + `SUBMITTER_PRIVATE_KEY` 后，`funding/tx` 解析 `EscrowCreated` 日志；`release/submit` / `refund` **真实发交易**（由 `SUBMITTER` 付 gas）。
+- **已配置 Anvil（或任意 RPC）**：设置 `CHAIN_RPC_URL` + `ESCROW_ADDRESS` + `SUBMITTER_PRIVATE_KEY`（或 `DEPLOYER_PRIVATE_KEY`）后，`funding/tx` 解析 `EscrowCreated` 日志；`release/submit` / `refund` **真实发交易**（由 `SUBMITTER/DEPLOYER` 付 gas）。
+- **可选 Postgres**：`.env` 中设置 `DATABASE_URL`（如 Neon）后，意图与 settlement outbox 持久化；启动时会自动建表，也可单独执行 `npm run db:migrate`。详见 [docs/persistence-postgres.md](docs/persistence-postgres.md)。
 
 ## 环境
 
@@ -59,9 +62,11 @@ npm run anvil:bootstrap
 CHAIN_ID=31337
 CHAIN_RPC_URL=http://127.0.0.1:8545
 ESCROW_ADDRESS=<PayFiEscrow 地址>
-SUBMITTER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-# 与 intent.user / intent.merchant 对应；网页「Copy cast command」与 scripts/sign-release.mjs 使用
-USER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+# deployer/relayer 与 user 分离
+DEPLOYER_PRIVATE_KEY=<Anvil 账户 #2 私钥>
+SUBMITTER_PRIVATE_KEY=<可选；留空则回退 DEPLOYER_PRIVATE_KEY>
+# 与 intent.user / intent.merchant 对应
+USER_PRIVATE_KEY=<Anvil 账户 #0 私钥>
 MERCHANT_PRIVATE_KEY=<Anvil 账户 #1 私钥>
 ```
 
@@ -71,6 +76,7 @@ MERCHANT_PRIVATE_KEY=<Anvil 账户 #1 私钥>
 |------|------|
 | 用户（#0） | `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266` |
 | 商家（#1） | `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` |
+| deployer/relayer（#2） | `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC` |
 
 1. `npm run dev` 启动 API。  
 2. `POST /intents` 创建意图（`asset` = MockERC20 地址，`amountTotal` / `amountPerLesson` 用 **wei** 字符串，且满足 `maxReleases * amountPerLesson == amountTotal`）。  
@@ -126,6 +132,22 @@ curl -sS -X POST "$BASE/api/payfi/v1/intents/$INTENT_ID/release/submit" \
 也可：`npm run sign-release -- prepare.json`（文件内容为 `release/prepare` 的 JSON）。
 
 亦可用 `cast wallet sign` 或前端钱包；脚本便于本地一把梭。
+
+### 用 viem 脚本驱动多账户（无需多钱包窗口）
+
+```bash
+# 查看当前角色地址（由 .env 私钥导出）
+npm run local-flow:accounts
+
+# 1) 创建意图（merchant/user 自动取自 .env 私钥）
+npm run local-flow:create
+
+# 2) 用户账户 approve + createAndDeposit（需传 intentId）
+npm run local-flow:fund -- --intent <INTENT_ID>
+
+# 3) user + merchant 本地签名，调用 release/submit
+npm run local-flow:release -- --intent <INTENT_ID>
+```
 
 ## 本地运行
 
@@ -225,11 +247,13 @@ curl -sS -X POST "$BASE/api/payfi/v1/debug/intents/$INTENT_ID/expire" | jq .
 curl -sS -X POST "$BASE/api/payfi/v1/intents/$INTENT_ID/refund" | jq .
 ```
 
-### 7) Mock HSP 出站记录
+### 7) Settlement outbox（调试）
 
 ```bash
-curl -sS "$BASE/api/payfi/v1/debug/hsp-outbox" | jq .
+curl -sS "$BASE/api/payfi/v1/debug/settlement-outbox" | jq .
 ```
+
+（兼容旧路径：`/debug/hsp-outbox` 与上述返回相同 JSON。）
 
 ### 8) 列出全部意图
 

@@ -56,6 +56,13 @@
               <input name="termsVersion" required value="1.0.0" />
             </label>
             <label>
+              Dispute Module (optional)
+              <input
+                name="disputeResolver"
+                placeholder="0x0000000000000000000000000000000000000000"
+              />
+            </label>
+            <label>
               Webhook URL (optional)
               <input name="webhookUrl" value="https://example.com/hooks/payfi" />
             </label>
@@ -119,8 +126,22 @@
         <form id="release-form" class="inline-form">
           <input id="release-intent-id" placeholder="Paste intentId" required />
           <button type="button" id="copy-release-pipeline-btn">Copy sign + submit commands</button>
+          <button type="button" id="release-refresh-state-btn">Refresh state</button>
           <span id="release-copy-status" class="copy-status"></span>
         </form>
+        <p class="muted release-state-hint">
+          <code>status</code>, <code>releaseCount</code>, <code>releasedTotal</code> from
+          <code>GET /intents/:id</code> (e.g. after terminal <code>release/submit</code>).
+        </p>
+        <pre id="release-state" class="result release-state"></pre>
+        <label class="cmd-label">
+          Command buffer (edit <code>INTENT_ID</code> here before running)
+          <textarea
+            id="release-command-buffer"
+            class="command-buffer"
+            placeholder="Click “Copy sign + submit commands” to fill this block, or paste and replace INTENT_ID manually."
+          ></textarea>
+        </label>
       </section>
     </main>
 

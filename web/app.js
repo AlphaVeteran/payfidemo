@@ -15,7 +15,10 @@ const copyStatus = document.querySelector("#copy-status");
 const commandBuffer = document.querySelector("#command-buffer");
 const releaseIntentInput = document.querySelector("#release-intent-id");
 const copyReleasePipelineBtn = document.querySelector("#copy-release-pipeline-btn");
+const releaseRefreshStateBtn = document.querySelector("#release-refresh-state-btn");
 const releaseCopyStatus = document.querySelector("#release-copy-status");
+const releaseCommandBuffer = document.querySelector("#release-command-buffer");
+const releaseState = document.querySelector("#release-state");
 
 let latestFundingData = "";
 let latestFundingTo = "";
@@ -33,17 +36,41 @@ function cleanPayload(raw) {
   return payload;
 }
 
-async function writeBufferAndCopy(text, statusNode, successText) {
-  if (commandBuffer) {
-    commandBuffer.value = text;
-    commandBuffer.focus();
-    commandBuffer.setSelectionRange(0, commandBuffer.value.length);
+async function refreshReleaseState() {
+  if (!releaseState || !releaseIntentInput) return;
+  const intentId = releaseIntentInput.value.trim();
+  if (!intentId) {
+    releaseState.style.color = "#9ca3af";
+    releaseState.textContent = "Enter intentId above, then Refresh state.";
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/intents/${encodeURIComponent(intentId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "query failed");
+    releaseState.style.color = "#93c5fd";
+    releaseState.textContent = [
+      `status:         ${data.status}`,
+      `releaseCount:   ${data.releaseCount}`,
+      `releasedTotal:  ${data.releasedTotal}`,
+    ].join("\n");
+  } catch (error) {
+    releaseState.style.color = "#fca5a5";
+    releaseState.textContent = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function writeBufferAndCopy(text, statusNode, successText, bufferEl = commandBuffer) {
+  if (bufferEl) {
+    bufferEl.value = text;
+    bufferEl.focus();
+    bufferEl.setSelectionRange(0, bufferEl.value.length);
   }
   try {
     await navigator.clipboard.writeText(text);
     statusNode.textContent = successText;
   } catch (_error) {
-    statusNode.textContent = "Filled textbox. Clipboard copy failed.";
+    statusNode.textContent = bufferEl ? "Filled textbox. Clipboard copy failed." : "Clipboard copy failed.";
   }
 }
 
@@ -66,6 +93,7 @@ createForm.addEventListener("submit", async (event) => {
       queryInput.value = data.intentId;
       fundingInput.value = data.intentId;
       if (releaseIntentInput) releaseIntentInput.value = data.intentId;
+      void refreshReleaseState();
     }
   } catch (error) {
     showResult(createResult, error instanceof Error ? error.message : String(error), true);
@@ -85,6 +113,7 @@ queryForm.addEventListener("submit", async (event) => {
     if (!res.ok) throw new Error(data?.error || "query failed");
     showResult(queryResult, data);
     if (releaseIntentInput) releaseIntentInput.value = intentId;
+    void refreshReleaseState();
   } catch (error) {
     showResult(queryResult, error instanceof Error ? error.message : String(error), true);
   }
@@ -108,6 +137,7 @@ fundingForm.addEventListener("submit", async (event) => {
     latestFundingTo = data?.to || "";
     showResult(fundingResult, data);
     if (releaseIntentInput) releaseIntentInput.value = intentId;
+    void refreshReleaseState();
   } catch (error) {
     showResult(fundingResult, error instanceof Error ? error.message : String(error), true);
   }
@@ -146,6 +176,7 @@ copyCastBtn.addEventListener("click", async () => {
     const sig =
       "createAndDeposit(address,address,uint128,uint128,uint16,uint64,bytes32,address)";
     const disputeZero = "0x0000000000000000000000000000000000000000";
+    const disputeModule = intent.anchor?.disputeResolver || disputeZero;
     const argList = [
       intent.merchant,
       intent.asset,
@@ -154,7 +185,7 @@ copyCastBtn.addEventListener("click", async () => {
       String(intent.maxReleases),
       String(intent.durationSeconds),
       agreementHash,
-      disputeZero,
+      disputeModule,
     ];
     const argsLines = argList.join(" \\\n  ");
 
@@ -182,6 +213,10 @@ copyCastBtn.addEventListener("click", async () => {
   }
 });
 
+releaseRefreshStateBtn?.addEventListener("click", () => {
+  void refreshReleaseState();
+});
+
 copyReleasePipelineBtn?.addEventListener("click", async () => {
   if (!releaseCopyStatus || !releaseIntentInput) return;
   releaseCopyStatus.textContent = "";
@@ -202,12 +237,8 @@ copyReleasePipelineBtn?.addEventListener("click", async () => {
     `curl -sS -X POST "$BASE/api/payfi/v1/intents/$INTENT_ID/release/submit" \\\n` +
     `  -H "Content-Type: application/json" \\\n` +
     `  -d "$(jq -n --arg u "$USER_SIG" --arg m "$MERCHANT_SIG" '{userSig:$u, merchantSig:$m}')" | jq .`;
-  try {
-    await navigator.clipboard.writeText(block);
-    releaseCopyStatus.textContent = "Copied.";
-  } catch (_error) {
-    releaseCopyStatus.textContent = "Copy failed.";
-  }
+  await writeBufferAndCopy(block, releaseCopyStatus, "Shown below + copied.", releaseCommandBuffer);
+  void refreshReleaseState();
 });
 
 copyFundingReportBtn.addEventListener("click", async () => {

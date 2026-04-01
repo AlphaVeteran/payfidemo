@@ -5,14 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:frontend": "npm run dev --prefix frontend",
     "start": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "forge:build": "forge build",
     "forge:test": "forge test -vv",
-    "anvil": "anvil --host 127.0.0.1 --port 8545 --ipc /tmp/payfi-anvil.ipc",
+    "anvil": "anvil --host 127.0.0.1 --port 8545 --ipc /tmp/payfi-anvil.ipc --chain-id ${ANVIL_CHAIN_ID:-31337}",
     "anvil:bootstrap": "forge script script/LocalAnvilBootstrap.s.sol:LocalAnvilBootstrap --rpc-url /tmp/payfi-anvil.ipc --broadcast --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    "sign-release": "node scripts/sign-release.mjs"
+    "sign-release": "node scripts/sign-release.mjs",
+    "local-flow:accounts": "node scripts/local-flow.mjs accounts",
+    "local-flow:create": "node scripts/local-flow.mjs create",
+    "local-flow:fund": "node scripts/local-flow.mjs fund",
+    "local-flow:release": "node scripts/local-flow.mjs release",
+    "local-flow:release-until-settled": "node scripts/local-flow.mjs release-until-settled",
+    "local-flow:run": "node scripts/local-flow.mjs run",
+    "db:migrate": "tsx src/db/migrate-cli.ts"
   },
   "engines": {
     "node": ">=20"
@@ -21,6 +29,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
+    "pg": "^8.20.0",
     "uuid": "^10.0.0",
     "viem": "^2.21.44"
   },
@@ -28,6 +37,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.9.0",
+    "@types/pg": "^8.20.0",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"

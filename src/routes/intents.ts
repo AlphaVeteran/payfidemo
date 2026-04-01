@@ -8,12 +8,22 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { getIntent, listIntents, saveIntent } from "../store/memory.js";
-import { emitMockHsp } from "../services/mockHsp.js";
+import { withPgTransaction } from "../db/withTransaction.js";
+import { getPgPool, isPersistenceEnabled } from "../db/pool.js";
+import { intentStore } from "../store/intentStore.js";
+import { pgSaveIntent } from "../store/postgresIntent.js";
+import { logSettlementEvent } from "../settlement/logSettlementEvent.js";
+import { settlementAdapter } from "../settlement/mockSettlementAdapter.js";
+import { appendSettlementOutbox } from "../settlement/settlementOutbox.js";
 import { dispatchWebhookDemo } from "../services/webhookStub.js";
 import type { CreateIntentBody, IntentRecord } from "../types.js";
 import { payFiEscrowAbi } from "../abi/payFiEscrow.js";
-import { getPublicClient, getSubmitterWallet, isChainMode } from "../chain/config.js";
+import {
+  getPublicClient,
+  getSubmitterWallet,
+  isChainMode,
+  parseChainIdFromEnv,
+} from "../chain/config.js";
 import { parseEscrowCreatedFromReceipt } from "../chain/funding.js";
 
 const router = Router();
@@ -30,7 +40,7 @@ function anchorFromBody(b: CreateIntentBody) {
   };
 }
 
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const b = req.body as CreateIntentBody;
   if (
     !b?.merchant ||
@@ -68,22 +78,28 @@ router.post("/", (req, res) => {
     releaseNonce: 0,
     createdAt: new Date().toISOString(),
   };
-  saveIntent(record);
-  emitMockHsp("INTENT_CREATED", {
-    intentId,
-    escrowId: null,
-    ...record.anchor,
-  });
+  const createdEmitPayload = { intentId, escrowId: null, ...record.anchor };
+  if (isPersistenceEnabled() && getPgPool()) {
+    await withPgTransaction(async (client) => {
+      await pgSaveIntent(record, client);
+      await appendSettlementOutbox("INTENT_CREATED", createdEmitPayload, client);
+    });
+    logSettlementEvent("INTENT_CREATED", createdEmitPayload);
+  } else {
+    await intentStore.saveIntent(record);
+    await settlementAdapter.emit("INTENT_CREATED", createdEmitPayload);
+  }
   res.status(201).json({ intentId, status: record.status });
 });
 
-router.get("/", (_req, res) => {
-  res.json({ intents: listIntents().map(sanitize) });
+router.get("/", async (_req, res) => {
+  const intents = await intentStore.listIntents();
+  res.json({ intents: intents.map(sanitize) });
 });
 
 /** 生成 createAndDeposit 的 calldata，便于 cast / 钱包发起 */
-router.get("/:intentId/funding/hint", (req, res) => {
-  const row = getIntent(req.params.intentId);
+router.get("/:intentId/funding/hint", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
     res.status(404).json({ error: "not found" });
     return;
@@ -94,6 +110,15 @@ router.get("/:intentId/funding/hint", (req, res) => {
     return;
   }
   try {
+    let disputeModuleAddr: Address = zeroAddress;
+    if (row.anchor.disputeResolver) {
+      try {
+        disputeModuleAddr = getAddress(row.anchor.disputeResolver);
+      } catch (_e) {
+        res.status(400).json({ error: "invalid disputeResolver address" });
+        return;
+      }
+    }
     const data = encodeFunctionData({
       abi: payFiEscrowAbi,
       functionName: "createAndDeposit",
@@ -105,7 +130,7 @@ router.get("/:intentId/funding/hint", (req, res) => {
         row.maxReleases,
         BigInt(row.durationSeconds),
         row.anchor.agreementHash as Hex,
-        zeroAddress,
+        disputeModuleAddr,
       ],
     });
     res.json({
@@ -122,8 +147,8 @@ router.get("/:intentId/funding/hint", (req, res) => {
   }
 });
 
-router.get("/:intentId", (req, res) => {
-  const row = getIntent(req.params.intentId);
+router.get("/:intentId", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
     res.status(404).json({ error: "not found" });
     return;
@@ -132,7 +157,7 @@ router.get("/:intentId", (req, res) => {
 });
 
 router.post("/:intentId/funding/tx", async (req, res) => {
-  const row = getIntent(req.params.intentId);
+  const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
     res.status(404).json({ error: "not found" });
     return;
@@ -191,10 +216,10 @@ router.post("/:intentId/funding/tx", async (req, res) => {
       row.escrowId = parsed.escrowId;
       row.status = "active";
       row.expiresAt = parsed.expiresAt;
-      saveIntent(row);
+      await intentStore.saveIntent(row);
 
       try {
-        emitMockHsp("INTENT_FUNDED", {
+        await settlementAdapter.emit("INTENT_FUNDED", {
           intentId: row.intentId,
           escrowId: parsed.escrowId,
           txHash,
@@ -213,7 +238,7 @@ router.post("/:intentId/funding/tx", async (req, res) => {
           },
         });
       } catch (sideErr) {
-        console.error("[funding/tx] mock hsp / webhook log failed:", sideErr);
+        console.error("[funding/tx] settlement outbox / webhook log failed:", sideErr);
       }
       res.json({ ok: true, status: row.status, escrowId: parsed.escrowId, chain: true });
       return;
@@ -225,13 +250,22 @@ router.post("/:intentId/funding/tx", async (req, res) => {
     row.escrowId = escrowId;
     row.status = "active";
     row.expiresAt = now + row.durationSeconds;
-    saveIntent(row);
-    emitMockHsp("INTENT_FUNDED", {
+    const fundedPayload = {
       intentId: row.intentId,
       escrowId,
       txHash,
       ...row.anchor,
-    });
+    };
+    if (isPersistenceEnabled() && getPgPool()) {
+      await withPgTransaction(async (client) => {
+        await pgSaveIntent(row, client);
+        await appendSettlementOutbox("INTENT_FUNDED", fundedPayload, client);
+      });
+      logSettlementEvent("INTENT_FUNDED", fundedPayload);
+    } else {
+      await intentStore.saveIntent(row);
+      await settlementAdapter.emit("INTENT_FUNDED", fundedPayload);
+    }
     dispatchWebhookDemo({
       webhookUrl: row.webhookUrl,
       webhookSecret: row.webhookSecret,
@@ -253,8 +287,8 @@ router.post("/:intentId/funding/tx", async (req, res) => {
   }
 });
 
-router.post("/:intentId/release/prepare", (req, res) => {
-  const row = getIntent(req.params.intentId);
+router.post("/:intentId/release/prepare", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
     res.status(404).json({ error: "not found" });
     return;
@@ -267,7 +301,7 @@ router.post("/:intentId/release/prepare", (req, res) => {
     res.status(400).json({ error: "not funded" });
     return;
   }
-  const chainId = Number(process.env.CHAIN_ID || 31337);
+  const chainId = parseChainIdFromEnv();
   const verifying = process.env.ESCROW_ADDRESS?.trim()
     ? getAddress(process.env.ESCROW_ADDRESS.trim())
     : "0x0000000000000000000000000000000000000000";
@@ -306,7 +340,7 @@ router.post("/:intentId/release/prepare", (req, res) => {
 });
 
 router.post("/:intentId/release/submit", async (req, res) => {
-  const row = getIntent(req.params.intentId);
+  const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
     res.status(404).json({ error: "not found" });
     return;
@@ -379,9 +413,9 @@ router.post("/:intentId/release/submit", async (req, res) => {
       row.releasedTotal = after[7].toString();
       row.releaseNonce = Number(after[10]);
       row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
-      saveIntent(row);
+      await intentStore.saveIntent(row);
 
-      emitMockHsp("SETTLEMENT_RELEASED", {
+      await settlementAdapter.emit("SETTLEMENT_RELEASED", {
         intentId: row.intentId,
         escrowId: row.escrowId,
         amount: row.amountPerLesson,
@@ -418,16 +452,25 @@ router.post("/:intentId/release/submit", async (req, res) => {
     row.releaseCount += 1;
     row.releasedTotal = (released + per).toString();
     row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
-    saveIntent(row);
     const txHashDemo = `0x${"ab".repeat(32)}`;
-    emitMockHsp("SETTLEMENT_RELEASED", {
+    const releasedPayload = {
       intentId: row.intentId,
       escrowId: row.escrowId,
       amount: row.amountPerLesson,
       releaseIndex: row.releaseCount,
       txHash: txHashDemo,
       ...row.anchor,
-    });
+    };
+    if (isPersistenceEnabled() && getPgPool()) {
+      await withPgTransaction(async (client) => {
+        await pgSaveIntent(row, client);
+        await appendSettlementOutbox("SETTLEMENT_RELEASED", releasedPayload, client);
+      });
+      logSettlementEvent("SETTLEMENT_RELEASED", releasedPayload);
+    } else {
+      await intentStore.saveIntent(row);
+      await settlementAdapter.emit("SETTLEMENT_RELEASED", releasedPayload);
+    }
     dispatchWebhookDemo({
       webhookUrl: row.webhookUrl,
       webhookSecret: row.webhookSecret,
@@ -460,7 +503,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
 });
 
 router.post("/:intentId/refund", async (req, res) => {
-  const row = getIntent(req.params.intentId);
+  const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
     res.status(404).json({ error: "not found" });
     return;
@@ -493,8 +536,8 @@ router.post("/:intentId/refund", async (req, res) => {
         return;
       }
       row.status = "refunded";
-      saveIntent(row);
-      emitMockHsp("INTENT_REFUNDED", {
+      await intentStore.saveIntent(row);
+      await settlementAdapter.emit("INTENT_REFUNDED", {
         intentId: row.intentId,
         escrowId: row.escrowId,
         remaining: (BigInt(row.amountTotal) - BigInt(row.releasedTotal)).toString(),
@@ -518,13 +561,22 @@ router.post("/:intentId/refund", async (req, res) => {
     }
 
     row.status = "refunded";
-    saveIntent(row);
-    emitMockHsp("INTENT_REFUNDED", {
+    const refundedPayload = {
       intentId: row.intentId,
       escrowId: row.escrowId,
       remaining: (BigInt(row.amountTotal) - BigInt(row.releasedTotal)).toString(),
       ...row.anchor,
-    });
+    };
+    if (isPersistenceEnabled() && getPgPool()) {
+      await withPgTransaction(async (client) => {
+        await pgSaveIntent(row, client);
+        await appendSettlementOutbox("INTENT_REFUNDED", refundedPayload, client);
+      });
+      logSettlementEvent("INTENT_REFUNDED", refundedPayload);
+    } else {
+      await intentStore.saveIntent(row);
+      await settlementAdapter.emit("INTENT_REFUNDED", refundedPayload);
+    }
     dispatchWebhookDemo({
       webhookUrl: row.webhookUrl,
       webhookSecret: row.webhookSecret,

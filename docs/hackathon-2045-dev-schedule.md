@@ -17,7 +17,7 @@
 |------|----------------|------|------------------|
 | **W0** | 已开赛～本周 | 范围冻结、仓库与 CI、环境变量模板 | Repo、`README` 骨架、`.env.example`、`CHAIN_ID=84532` |
 | **W1** | 第 1 整周 | 合约 + 部署 + 最简读写 | Escrow 多 `escrowId`、Base Sepolia 地址、Foundry/Hardhat 测试通过 |
-| **W2** | 第 2 整周 | PayFi API + Mock HSP + 意图状态机 | `POST/GET intents`、Funding 确认、`MockHSPAdapter`、`hsp_outbox` 或日志 |
+| **W2** | 第 2 整周 | PayFi API + 结算 outbox + 意图状态机 | `POST/GET intents`、Funding 确认、`MockSettlementAdapter`、`settlement_outbox` 或日志 |
 | **W3** | 第 3 整周 | 双签释放 + Webhook + 合同锚点 | EIP-712 `prepare/submit`、HMAC Webhook、幂等 `eventId` |
 | **W4** | 第 4 整周 | 前端 +（可选）x402 + 演示 | dApp 主路径录屏可用、402 路由可选开关 |
 | **缓冲** | 截止前 2～3 天 | 稳定性、文案、BUIDL 信息 | 无 P0 bug、演示脚本、DoraHacks 提交项齐全 |
@@ -33,7 +33,7 @@
 |------|----------|------|
 | **P0 范围** | 0.5d | 确定：仅 PayFi 主叙事；Base Sepolia；USDC/Mock；HSP Mock；x402 是否做（建议最多 1～2 个 API） |
 | **P1 合约** | 2～4d | `createAndDeposit` / `releaseBySignatures` / `refund`；事件；测试网部署；README 写合约地址与浏览器链接 |
-| **P2 后端** | 3～5d | 意图 CRUD、`intentId↔escrowId`、funding 确认、MockHSP、Webhook 投递与重试占位 |
+| **P2 后端** | 3～5d | 意图 CRUD、`intentId↔escrowId`、funding 确认、`SettlementPort`/Mock、Webhook 投递与重试占位 |
 | **P3 签名** | 2～3d | EIP-712 与合约一致；`agreementHash`/`termsVersion` 进 typed data；提交前校验 |
 | **P4 前端** | 3～5d | 连接钱包、创建意图、充值、双方确认、签名、展示交易链接 |
 | **P5 x402（可选）** | 1～2d | 参考 [coinbase/x402](https://github.com/coinbase/x402) 接一条「402 → 付费再访问」；环境变量开关 |
