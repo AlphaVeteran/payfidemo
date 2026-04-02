@@ -171,6 +171,39 @@ Mac 开发环境
 
 ---
 
+## 四-A、`.env` 环境切换（Anvil ↔ Hashkey Testnet）
+
+本仓库后端在启动时会加载项目根目录下的 `.env`（`src/server.ts` 里使用 `dotenv`），而本地 `anvil` 与 `hashkey chain testnet` 的配置差异很大，所以建议用脚本自动切换，避免手动反复拷贝导致出错。
+
+### 1) 一键启动（推荐）
+
+- 启动本地 Anvil 环境：
+  - `npm run dev:local`
+- 启动 Hashkey Chain Testnet 环境：
+  - `npm run dev:hashkey`
+
+### 2) 直接切换（等价）
+
+- 切到本地 Anvil：
+  - `bash scripts/switch-env.sh local`
+- 切到 Hashkey Testnet：
+  - `bash scripts/switch-env.sh hashkey`
+- 如需重置 testnet 配置为模板（覆盖 `./.env.hashkey.testnet`）：
+  - `bash scripts/switch-env.sh hashkey --refresh`
+
+### 3) 脚本做了什么
+
+- 会把项目根目录的 `.env` 替换为指向对应配置文件的 symlink：
+  - 本地：`./.env.local.anvil`
+  - Testnet：`./.env.hashkey.testnet`（首次默认从 `./.env.example` 复制生成）
+- 在首次切到 `hashkey` 前，如果你本地备份 `./.env.local.anvil` 还不存在，脚本会把当前 `.env` 先备份过去，避免丢失你的本地配置。
+
+### 4) 注意事项（避免被脚本“改回去”）
+
+- `./scripts/reset-local-dev.sh` 会更新/重写项目根目录的 `.env` 用于本地联调；所以你在切换到 testnet 后，如果又运行了该脚本，`.env` 可能会被改回本地配置。
+
+---
+
 ## 五、10 分钟验收清单（只开后端 + 三个 Chrome Profile）
 
 ### 0) 启动（1 分钟）

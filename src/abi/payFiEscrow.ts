@@ -1,5 +1,17 @@
 export const payFiEscrowAbi = [
   {
+    type: "constructor",
+    inputs: [{ name: "submitter_", type: "address" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "submitter",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
     type: "function",
     name: "createAndDeposit",
     inputs: [
@@ -13,6 +25,24 @@ export const payFiEscrowAbi = [
       { name: "disputeModule_", type: "address" },
     ],
     outputs: [{ name: "id", type: "uint256" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "registerDeposit",
+    inputs: [
+      { name: "escrowId", type: "uint256" },
+      { name: "user_", type: "address" },
+      { name: "merchant_", type: "address" },
+      { name: "asset_", type: "address" },
+      { name: "amountTotal_", type: "uint128" },
+      { name: "amountPerLesson_", type: "uint128" },
+      { name: "maxReleases_", type: "uint16" },
+      { name: "expiresAt_", type: "uint64" },
+      { name: "agreementHash_", type: "bytes32" },
+      { name: "disputeModule_", type: "address" },
+    ],
+    outputs: [],
     stateMutability: "nonpayable",
   },
   {
@@ -64,6 +94,17 @@ export const payFiEscrowAbi = [
     ],
     outputs: [{ name: "", type: "bytes32" }],
     stateMutability: "view",
+  },
+  {
+    type: "event",
+    name: "EscrowRegistered",
+    inputs: [
+      { name: "id", type: "uint256", indexed: true },
+      { name: "user", type: "address", indexed: true },
+      { name: "merchant", type: "address", indexed: true },
+      { name: "asset", type: "address", indexed: false },
+      { name: "amountTotal", type: "uint256", indexed: false },
+    ],
   },
   {
     type: "event",

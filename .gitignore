@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .env
+.env.local.anvil
+.env.hashkey.testnet
+.env.*.bak
 *.log
 .DS_Store
 
@@ -11,3 +14,5 @@ broadcast/
 
 lib/*
 !lib/README.md
+keys/merchant_private_key.pem
+

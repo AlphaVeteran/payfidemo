@@ -41,6 +41,33 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-02）
+
+【今日完成】
+- **Phase 1：合约适配（Gateway 入金路径）**
+  - 在 `contracts/PayFiEscrow.sol` 新增 `registerDeposit`（仅 `submitter` 可调用）与 `EscrowRegistered` 事件。
+  - 通过 `liabilityPerAsset` 校验 Gateway 已转入合约的余额是否覆盖本次登记的托管义务，避免多笔意图登记超额。
+  - 更新 `PayFiEscrow` 构造函数为 `PayFiEscrow(submitter)`；本地旧路径仍支持 `createAndDeposit`。
+  - 新增 `test/PayFiEscrowRegister.t.sol` 覆盖：登记后持币、双签释放、权限/重复 id/余额不足回滚、事件校验。
+  - 更新 ABI：`src/abi/payFiEscrow.ts` 补齐 `constructor/submitter/registerDeposit/EscrowRegistered`。
+- **部署与 Foundry 配置**
+  - 新增 `script/DeployHashKey.s.sol`（HashKey 链部署，使用 `SUBMITTER_PRIVATE_KEY` 优先）。
+  - 更新 `script/DeployPayFiEscrow.s.sol` 与 `script/LocalAnvilBootstrap.s.sol` 以适配新构造函数。
+  - `foundry.toml` 增加 `hashkey-testnet` rpc endpoint。
+- **Phase 2：持久化策略确认**
+  - 放弃 SQLite/文件持久化，回到现有方案：仅当设置 `DATABASE_URL` 时启用 Postgres 持久化；未设置则回退内存 Map（与原架构一致）。
+- **Phase 3：HashKey 认证层**
+  - 新增 `src/hashkey/canonical.ts`（Canonical JSON + `sha256`）、`src/hashkey/auth.ts`（HMAC 头构造）、`src/hashkey/jwt.ts`（ES256K JWT + `jose`）。
+  - 安装依赖 `jose`，并完成 `npm run typecheck`。
+
+【未完成】
+- HashKey Gateway 对接（Phase 4）：`POST /intents -> createReusableOrder` 以及后续 webhook -> `registerDeposit` 链上登记链路仍待接入（需凭证到位与联调环境稳定性）。
+
+【验证结果】
+- `forge fmt` + `forge test -vvv`：`PayFiEscrowRegisterTest` 与原 `PayFiEscrowTest` 全部通过。
+- `npm run typecheck`：TypeScript 编译通过。
+- （可选）`forge test --fork-url ...` 在当前网络环境可能会出现 RPC 连接失败；这不影响本地合约/逻辑验证。
+
 ## 当日记录（2026-04-01）
 
 【今日完成】

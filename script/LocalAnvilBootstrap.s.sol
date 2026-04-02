@@ -12,7 +12,7 @@ contract LocalAnvilBootstrap is Script {
         // 使用 CLI：`--private-key <anvil_default_0>`，见 README
         vm.startBroadcast();
         MockERC20 token = new MockERC20("Mock USDC", "mUSDC");
-        PayFiEscrow escrow = new PayFiEscrow();
+        PayFiEscrow escrow = new PayFiEscrow(msg.sender);
         address deployer = msg.sender;
         token.mint(deployer, 10_000 ether);
         vm.stopBroadcast();

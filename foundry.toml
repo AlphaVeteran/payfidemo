@@ -9,3 +9,6 @@ via_ir = false
 
 [fmt]
 line_length = 100
+
+[rpc_endpoints]
+hashkey-testnet = "https://hashkeychain-testnet.alt.technology"
