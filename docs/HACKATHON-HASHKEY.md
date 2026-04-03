@@ -78,7 +78,7 @@ Step 6  退款演示（可选）    POST .../refund
 ```bash
 # HashKey Chain Testnet
 CHAIN_ID=133
-CHAIN_RPC_URL=https://hashkeychain-testnet.alt.technology
+CHAIN_RPC_URL=https://testnet.hsk.xyz
 CHAIN_NETWORK=hashkey-testnet
 
 # USDC on HashKey Chain Testnet (官方文档地址)
@@ -578,7 +578,7 @@ async function connectOKX() {
         chainId: '0x85',
         chainName: 'HashKey Chain Testnet',
         nativeCurrency: { name: 'HSK', symbol: 'HSK', decimals: 18 },
-        rpcUrls: ['https://hashkeychain-testnet.alt.technology'],
+        rpcUrls: ['https://testnet.hsk.xyz'],
         blockExplorerUrls: ['https://hashkey.blockscout.com'],
       }],
     });

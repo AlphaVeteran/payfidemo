@@ -35,6 +35,9 @@ export interface IntentRecord {
   expiresAt: number | null;
   releaseNonce: number;
   createdAt: string;
+  paymentUrl?: string;
+  hskPaymentReqId?: string;
+  hskCartMandateId?: string;
 }
 
 export interface CreateIntentBody {

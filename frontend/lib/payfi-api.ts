@@ -23,6 +23,8 @@ export type IntentRecord = {
   releasedTotal: string;
   expiresAt: number | null;
   releaseNonce: number;
+  paymentUrl?: string;
+  hskPaymentReqId?: string;
   anchor: {
     agreementHash: string;
     termsVersion: string;
@@ -33,16 +35,29 @@ export type IntentRecord = {
 export async function createIntent(body: Record<string, unknown>): Promise<{
   intentId: string;
   status: string;
+  paymentUrl?: string | null;
+  hskPaymentReqId?: string | null;
 }> {
   const res = await fetch(`${apiRoot()}/intents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data: { error?: string; intentId?: string; status?: string } =
+  const data: {
+    error?: string;
+    intentId?: string;
+    status?: string;
+    paymentUrl?: string | null;
+    hskPaymentReqId?: string | null;
+  } =
     await res.json();
   if (!res.ok) throw new Error(data.error || "create failed");
-  return { intentId: data.intentId!, status: data.status! };
+  return {
+    intentId: data.intentId!,
+    status: data.status!,
+    paymentUrl: data.paymentUrl ?? null,
+    hskPaymentReqId: data.hskPaymentReqId ?? null,
+  };
 }
 
 export async function getIntent(intentId: string): Promise<IntentRecord> {

@@ -25,6 +25,7 @@ import {
   parseChainIdFromEnv,
 } from "../chain/config.js";
 import { parseEscrowCreatedFromReceipt } from "../chain/funding.js";
+import { createReusableOrder } from "../hashkey/client.js";
 
 const router = Router();
 
@@ -77,6 +78,8 @@ router.post("/", async (req, res) => {
     expiresAt: null,
     releaseNonce: 0,
     createdAt: new Date().toISOString(),
+    paymentUrl: undefined,
+    hskPaymentReqId: undefined,
   };
   const createdEmitPayload = { intentId, escrowId: null, ...record.anchor };
   if (isPersistenceEnabled() && getPgPool()) {
@@ -89,7 +92,49 @@ router.post("/", async (req, res) => {
     await intentStore.saveIntent(record);
     await settlementAdapter.emit("INTENT_CREATED", createdEmitPayload);
   }
-  res.status(201).json({ intentId, status: record.status });
+  let hashkey: { ok: boolean; reason?: string; raw?: unknown } = { ok: false };
+  try {
+    const hsk = await createReusableOrder({
+      intentId: record.intentId,
+      merchant: record.merchant,
+      amountTotal: record.amountTotal,
+    });
+    if (hsk.paymentUrl) {
+      record.paymentUrl = hsk.paymentUrl;
+    }
+    if (hsk.paymentRequestId) {
+      record.hskPaymentReqId = hsk.paymentRequestId;
+    }
+    if (hsk.cartMandateId) {
+      record.hskCartMandateId = hsk.cartMandateId;
+    }
+    if (record.paymentUrl) {
+      hashkey = { ok: true };
+    } else {
+      hashkey = {
+        ok: false,
+        reason: "HashKey returned no payment_url",
+        raw: hsk.raw,
+      };
+      console.warn("[HashKey] reusable order ok but missing payment_url", hsk.raw);
+    }
+    await intentStore.saveIntent(record);
+  } catch (e) {
+    console.error("[HashKey] createReusableOrder failed:", e);
+    hashkey = {
+      ok: false,
+      reason: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  res.status(201).json({
+    intentId,
+    status: record.status,
+    paymentUrl: record.paymentUrl ?? null,
+    hskPaymentReqId: record.hskPaymentReqId ?? null,
+    hskCartMandateId: record.hskCartMandateId ?? null,
+    hashkey,
+  });
 });
 
 router.get("/", async (_req, res) => {

@@ -13,13 +13,20 @@ import { fileURLToPath } from "node:url";
 import { runMigrations } from "./db/migrate.js";
 import { closePgPool, getPgPool, isPersistenceEnabled } from "./db/pool.js";
 import intentsRouter from "./routes/intents.js";
+import hashkeyWebhookRouter from "./routes/webhook.js";
 import { intentStore } from "./store/intentStore.js";
 import { getSettlementOutbox } from "./settlement/settlementOutbox.js";
 import { getWalletChainId, isChainMode } from "./chain/config.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as { rawBody?: string }).rawBody = buf.toString("utf8");
+    },
+  }),
+);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(__dirname, "../web");
 
@@ -40,6 +47,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.use(`${API}/intents`, intentsRouter);
+app.use("/webhooks", hashkeyWebhookRouter);
 app.use(express.static(webDir));
 
 app.get("/", (_req, res) => {

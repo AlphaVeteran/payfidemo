@@ -11,4 +11,4 @@ via_ir = false
 line_length = 100
 
 [rpc_endpoints]
-hashkey-testnet = "https://hashkeychain-testnet.alt.technology"
+hashkey-testnet = "https://testnet.hsk.xyz"

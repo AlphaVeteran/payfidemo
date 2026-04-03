@@ -41,6 +41,39 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-03）
+
+【今日完成】
+- **HashKey Gateway 下单与 webhook 链上登记**
+  - 新增 **`src/hashkey/client.ts`**：按意图组装 **x402 v2** cart（USDC、**`pay_to`** 为托管合约）、**`createReusableOrder`** 调用商户 API；请求体使用 **`canonicalStringify`** + HMAC；**`redirect_url`** 由 **`HASHKEY_REDIRECT_URL`** 或 **`BASE_URL`** + **`/payment/result`** 提供。
+  - **`POST .../intents`**：**`createReusableOrder`** 成功后回写 **`paymentUrl` / `hskPaymentReqId` / `hskCartMandateId`**，响应增加 **`hashkey`** 与上述字段；失败仍保留已创建意图并记录错误信息。
+  - 新增 **`POST /webhooks/hashkey`**（**`src/routes/webhook.ts`**）：校验 **`x-signature`**（**`APP_SECRET`**）、**`x-event-id`** 进程内幂等；**`payment-successful`** 时用 **`tx_signature`** 调 **`registerEscrowOnChain`**（**`src/chain/escrow.ts`**）执行 **`registerDeposit`**，intent 进入 **`active`**；**`payment-failed`** 将状态标为 **`expired`**。
+  - **`src/server.ts`**：`express.json` 的 **`verify`** 保存 **`rawBody`** 以支持 webhook 验签。
+- **认证与序列化**
+  - **`canonicalize`** 库实现规范 JSON 字符串，用于 **`cart_hash`** 与 HMAC body 字节；**`jwt.ts`** 改为手工 ES256K（**`ecdsa-sig-formatter`** + **`crypto.sign`**），与商户侧 **`cart_hash`** 对齐。
+  - **`auth.ts`** 注释明确 bodyHash 取自 canonical JSON 的 UTF-8 SHA-256 hex。
+- **类型与前端**：**`src/types.ts`**、**`frontend/lib/payfi-api.ts`** 对齐支付链接与 HashKey 请求 id 字段。
+- **环境示例与文档**：**`.env.example`**、**`foundry.toml`**、**`docs/HACKATHON-HASHKEY.md`** 将测试网 RPC 统一切到 **`https://testnet.hsk.xyz`**；示例 **`MERCHANT_NAME`** 调整为 **`payfidemo`**；补充 **`BASE_URL` / `HASHKEY_REDIRECT_URL`** 说明。
+- **依赖**：新增 **`canonicalize`**、**`ecdsa-sig-formatter`**；移除已无源码引用的 **`jose`**、**`jsonwebtoken`**（与当前手工 ES256K 实现一致）。
+- **参考材料**：新增 **`docs/merchant-docs-all-in-one.pdf`**、**`docs/Hashkey_Payment_Deck_CaaS_EN.pdf`**（文档存档；大文件注意 clone 体积）。
+
+【未完成】
+- Webhook 幂等依赖进程内 **`Set`**，多副本或重启需持久化或边缘层去重。
+- **`registerEscrowOnChain`** 与 **`payment-failed`** 分支的边界（重复处理、结算 outbox）可继续与产品态对齐。
+- 建议在具备 QA 凭证与公网 **`BASE_URL`**（如 ngrok）的环境补一条端到端验证摘要。
+
+【验证结果】
+- **`npm run typecheck`**：通过（提交前本地执行）。
+
+【代码证据】
+- `src/hashkey/client.ts`、`src/hashkey/canonical.ts`、`src/hashkey/jwt.ts`、`src/hashkey/auth.ts`
+- `src/routes/intents.ts`、`src/routes/webhook.ts`、`src/chain/escrow.ts`、`src/server.ts`
+- `src/types.ts`、`frontend/lib/payfi-api.ts`
+- `.env.example`、`foundry.toml`、`docs/HACKATHON-HASHKEY.md`、`package.json`、`package-lock.json`
+
+【明日第一任务建议（只能一个）】
+- 公网 API + HashKey QA 跑通 **下单 → 支付成功 webhook → 链上 `registerDeposit`**，并把关键响应与 **`escrowId`** 记入 WORKLOG。
+
 ## 当日记录（2026-04-02）
 
 【今日完成】

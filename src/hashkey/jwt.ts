@@ -1,8 +1,16 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { createPrivateKey } from "node:crypto";
-import { SignJWT } from "jose";
+import ecdsaSigFormatter from "ecdsa-sig-formatter";
 import { canonicalHash } from "./canonical.js";
+
+function base64url(input: string | Buffer): string {
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
 
 export async function buildMerchantJWT(cartContents: object): Promise<string> {
   const merchantName = process.env.MERCHANT_NAME?.trim();
@@ -10,13 +18,12 @@ export async function buildMerchantJWT(cartContents: object): Promise<string> {
   if (!merchantName) throw new Error("MERCHANT_NAME is required");
   if (!pemPath) throw new Error("MERCHANT_PRIVATE_KEY_PATH is required");
 
-  const pem = fs.readFileSync(pemPath, "utf8");
-  const privateKey = createPrivateKey(pem);
+  const privateKeyPem = fs.readFileSync(pemPath, "utf8").trim();
+  const privateKey = createPrivateKey(privateKeyPem);
 
   const cartHash = canonicalHash(cartContents);
   const now = Math.floor(Date.now() / 1000);
-
-  return new SignJWT({
+  const payload = {
     iss: merchantName,
     sub: merchantName,
     aud: "HashkeyMerchant",
@@ -24,8 +31,17 @@ export async function buildMerchantJWT(cartContents: object): Promise<string> {
     exp: now + 3600,
     jti: `JWT-${now}-${crypto.randomUUID()}`,
     cart_hash: cartHash,
-  })
-    .setProtectedHeader({ alg: "ES256K", typ: "JWT" })
-    .sign(privateKey);
-}
+  };
 
+  const header = { alg: "ES256K", typ: "JWT" };
+  const encodedHeader = base64url(JSON.stringify(header));
+  const encodedPayload = base64url(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const derSig = crypto.sign("sha256", Buffer.from(signingInput, "utf8"), {
+    key: privateKey,
+    dsaEncoding: "der",
+  });
+  // secp256k1: JOSE encoding matches ES256 (32-byte r | 32-byte s) after DER decode.
+  const joseSigB64 = ecdsaSigFormatter.derToJose(derSig, "ES256");
+  return `${signingInput}.${joseSigB64}`;
+}
