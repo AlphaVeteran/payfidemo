@@ -1,0 +1,22 @@
+# payfidemo — Express API（仓库根目录）
+#
+# Monorepo：前端在 frontend/，需另建一个 Railway Service（见 frontend/railway.toml）。
+#
+# 本服务 Railway 设置：
+#   - Root Directory: 留空（仓库根）
+#   - Variables：与本地 .env.example 一致（DATABASE_URL、CHAIN_*、ESCROW_ADDRESS、私钥等）
+
+[build]
+builder = "RAILPACK"
+watchPatterns = [
+  "src/**",
+  "web/**",
+  "package.json",
+  "package-lock.json",
+  "tsconfig.json",
+  "railway.toml",
+]
+
+[deploy]
+startCommand = "node dist/server.js"
+healthcheckPath = "/health"

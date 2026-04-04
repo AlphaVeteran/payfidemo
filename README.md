@@ -266,6 +266,7 @@ curl -sS "$BASE/api/payfi/v1/intents" | jq .
 - [架构说明](docs/payfi-escrow-architecture.md)
 - [幂等 / Webhook](docs/payment-flow-idempotency-replay-clock-skew.md)
 - [三周计划](docs/3-week-dev-plan.md)
+- [Base Sepolia + Railway（API/前端）+ Neon 部署](docs/railway-base-sepolia-deploy.md)
 
 ## 许可证
 

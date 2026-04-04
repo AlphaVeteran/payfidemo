@@ -41,6 +41,25 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-04）
+
+【今日完成】
+- **分支**：在 **`feat/base-sepolia`** 上推进 Base Sepolia 部署准备（相对 **`origin/main`** 跟踪；本地 `.env` 仅本机，不提交）。
+- **`.gitignore`**：忽略 **`.env.hashkey.testnet`**、**`.env.local.anvil`**；新增 **`keys/`**，避免商户/网关 PEM 等密钥误入库。
+- **Railway（Config as Code）**：根目录 **`railway.toml`** — `RAILPACK`、`watchPatterns`（`src/` / `web/` 等）、**`startCommand`**：`node dist/server.js`、**`healthcheckPath`**：`/health`；**`frontend/railway.toml`** — Next 生产启动 **`npx next start -H 0.0.0.0`**、`/` 健康检查、前端目录 **watchPatterns**；注释说明 monorepo 下 **Root Directory** 与 **`NEXT_PUBLIC_PAYFI_API_URL`**。
+- **文档**：新增 **`docs/railway-base-sepolia-deploy.md`**（Base Sepolia 合约部署、Neon、`NEXT_PUBLIC_*` 与 `payfi-api` 根 URL 约定、双 Service 顺序、测试与排错）；**`README.md`** 文档索引增加该链接。
+- **`.env.example`**：在 **`DATABASE_URL`** 说明处增加可与多分支共用 Neon 的示例控制台链接（无密钥）。
+
+【未完成】
+- Base Sepolia 上 **Escrow 实际地址** 与区块浏览器链接仍待部署后写入 **`WORKLOG` / `README`**。
+- Railway / Neon 线上 Variables 与首次公网联调验证待执行（见部署文档）。
+
+【代码证据】
+- `railway.toml`、`frontend/railway.toml`、`.gitignore`、`.env.example`、`README.md`、`docs/railway-base-sepolia-deploy.md`
+
+【明日第一任务建议（只能一个）】
+- 在 Base Sepolia **部署 PayFiEscrow**，将 **`ESCROW_ADDRESS`** 与 **`asset`** 写入 Railway API Variables，按 **`docs/railway-base-sepolia-deploy.md`** 完成 API + 前端双服务首次部署并 **`GET /health`** 确认 **`persistence: postgres`**。
+
 ## 当日记录（2026-04-01）
 
 【今日完成】

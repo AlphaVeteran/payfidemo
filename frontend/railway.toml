@@ -1,0 +1,30 @@
+# payfidemo — Next.js 前端（与根目录 API 分属两个 Railway Service）
+#
+# Railway 控制台：
+#   - New Service → 同一 GitHub 仓库
+#   - Settings → Root Directory: frontend
+#   - 若未读取到此文件：Settings → Config-as-code path: frontend/railway.toml（或 /frontend/railway.toml）
+#
+# Variables（示例）：
+#   NEXT_PUBLIC_PAYFI_API_URL=https://<你的 API 服务>.up.railway.app
+#   NEXT_PUBLIC_CHAIN_ID=84532
+#   NEXT_PUBLIC_CHAIN_RPC_URL=https://sepolia.base.org
+
+[build]
+builder = "RAILPACK"
+watchPatterns = [
+  "app/**",
+  "components/**",
+  "lib/**",
+  "public/**",
+  "package.json",
+  "package-lock.json",
+  "next.config.ts",
+  "postcss.config.mjs",
+  "tsconfig.json",
+  "eslint.config.mjs",
+]
+
+[deploy]
+startCommand = "npx next start -H 0.0.0.0"
+healthcheckPath = "/"

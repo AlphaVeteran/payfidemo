@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .env
+.env.hashkey.testnet
+.env.local.anvil
+keys/
 *.log
 .DS_Store
 
