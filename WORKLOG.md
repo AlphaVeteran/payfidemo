@@ -14,7 +14,8 @@
 - `PayFiEscrow`：`0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512`（来源：`.env` + `broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
 - `MockERC20 (mUSDC)`：`0x5FbDB2315678afecb367f032d93F642f64180aa3`（来源：`broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
 - **Base Sepolia** 演示资产：**Circle 测试 USDC** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`（6 decimals）；前端在 `chainId=84532` 时默认使用该地址（见 `frontend/lib/token-addresses.ts`）。
-- 备注：**USDC 资产地址**已在文档与示例中固化；**PayFiEscrow 在 Base Sepolia 的部署合约地址**仍待部署后写入此节、`README.md` 与 Railway Variables。
+- **Base Sepolia** `PayFiEscrow`：`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`（[Basescan Sepolia](https://sepolia.basescan.org/address/0x3FCE185FFF78dDB1120C606A0611e168646a0CeA)）；与根目录 **`.env.example`** 中 **`ESCROW_ADDRESS`** 一致（团队演示用；生产请自部署并改 Variables）。
+- 备注：本地 Anvil 与 Base Sepolia 的 **`ESCROW_ADDRESS` / `asset`** 须在各自 **`.env`** 与 Railway Variables 中与链上实例一致，否则 EIP-712 与 **`funding/tx`** 校验会失败。
 
 ## 已解决的问题
 
@@ -23,10 +24,11 @@
 - API 已支持链上模式：`funding/tx` 可从交易回执解析 `EscrowCreated` 并校验 `user/merchant/asset/amount/agreementHash` 一致性。
 - API 已支持链上真实交易提交流程：`release/submit` 与 `refund` 在配置 RPC/私钥后可由提交账户发交易并回写本地状态。
 - 已提供本地完整联调脚本与步骤：anvil 启动、bootstrap 部署、签名脚本、curl 测试、debug 接口。
+- **Base Sepolia** 演示用 **`PayFiEscrow`**（`0x3FCE185…`）已部署，地址写入 **`.env.example`**，并同步 **`README.md`**、**`docs/railway-base-sepolia-deploy.md`** 与「当前合约地址」+ Basescan 链接。
 
 ## 待解决的问题
 
-- 补充并固定 Base Sepolia 实际部署地址（含区块浏览器链接），同步到 `README.md` 和提交材料。
+- Railway / 其它线上环境：将 **`ESCROW_ADDRESS`**（可与 `.env.example` 示例一致或替换为自有部署）、**`CHAIN_ID=84532`**、**`CHAIN_RPC_URL`**、**`asset`=USDC** 与 Neon **`DATABASE_URL`** 配齐后，完成 **`GET /health`** 与 **创建 intent → funding** 的联网冒烟并记入 WORKLOG。
 - 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**webhook 投递记录**等仍缺可靠落库与重试闭环。
 - 完成 webhook 投递可靠性闭环：签名/HMAC、重试策略、幂等去重落库与可观测性。
 - 完成前端主路径（创建意图、充值提示、双签提交、状态展示、退款操作）并打通演示录屏。
@@ -51,10 +53,10 @@
 - **`.env.example`**：可选 **`BASE_URL`**（仅便于 `source` 后冒烟 `curl`，服务端不读）、**`DATABASE_URL`** 占位与 Neon URL 含 **`&`** 时的引号提示、Base Sepolia **`asset`** 注释与 Circle 文档链接。
 - **部署脚本**：**`script/DeployPayFiEscrow.s.sol`** 增加 **`privateKeyFromEnv`**，兼容 **`PRIVATE_KEY`** 为 **`0x` 前缀或 64 位十六进制**（与仓库其它 env 风格一致）。
 - **本地调试页**：**`web/index.html`** 默认 **Asset** 改为 Base Sepolia Circle USDC 地址（与线上演示资产一致）。
+- **Base Sepolia 链上**：已用 **`script/DeployPayFiEscrow.s.sol`** 部署 **`PayFiEscrow`**，地址 **`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`** 已写入 **`.env.example`** 的 **`ESCROW_ADDRESS`**，并同步 **`WORKLOG`**（当前合约地址）、**`README.md`**、**`docs/railway-base-sepolia-deploy.md`** 与 Basescan 链接。
 
 【未完成】
-- Base Sepolia 上 **PayFiEscrow 实际地址** 与 Basescan 链接仍待部署后写入 **`WORKLOG` / `README`** 与 Railway。
-- Base Sepolia 端到端（领测试 USDC、approve、**`createAndDeposit`**、双签 release）的联调验证与录屏可按需补记。
+- Base Sepolia 端到端（领测试 USDC、approve、**`createAndDeposit`**、双签 release）的联调验证与录屏可按需补记；Railway Variables 与公网双服务冒烟仍待按部署文档执行。
 
 【代码证据】
 - `frontend/lib/token-addresses.ts`、`frontend/components/payfi-demo.tsx`
@@ -62,7 +64,7 @@
 - `script/DeployPayFiEscrow.s.sol`、`web/index.html`
 
 【明日第一任务建议（只能一个）】
-- 在 Base Sepolia **部署 PayFiEscrow**（`forge script ... DeployPayFiEscrow`），将 **`ESCROW_ADDRESS`** 与 **`asset`**（USDC）写入环境，按 **`docs/railway-base-sepolia-deploy.md`** 完成一次 **`GET /health`** 与 **创建 intent → funding** 的冒烟验证。
+- 将 **`ESCROW_ADDRESS`**（`0x3FCE185…` 或自有部署）、**`CHAIN_ID`**、**`CHAIN_RPC_URL`**、**`asset`**（USDC）写入 **Railway** API Variables，按 **`docs/railway-base-sepolia-deploy.md`** 完成 **`GET /health`**（**`persistence: postgres`**）与 **创建 intent → funding** 的公网冒烟。
 
 ## 当日记录（2026-04-04）
 

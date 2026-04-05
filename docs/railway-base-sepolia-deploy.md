@@ -35,6 +35,7 @@ forge script script/DeployPayFiEscrow.s.sol:DeployPayFiEscrow \
 ```
 
 - 将部署得到的 **Escrow 合约地址** 写入 Railway API 服务的 **`ESCROW_ADDRESS`**。
+- **仓库示例**：根目录 [`.env.example`](../.env.example) 已填入一次 Base Sepolia 部署的 **`PayFiEscrow`**：`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`（[Basescan](https://sepolia.basescan.org/address/0x3FCE185FFF78dDB1120C606A0611e168646a0CeA)）。可与该值一致以复用同一合约，或改为你们自部署的地址。
 - 创建 intent 时的 **`asset`** 必须与链上使用的代币地址一致。Base Sepolia 建议使用 **Circle 测试 USDC**：`0x036CbD53842c5426634e7929541eC2318f3dCF7e`（**6 decimals**，见 [Circle USDC 合约列表](https://developers.circle.com/stablecoins/usdc-contract-addresses)）。
 - 可选：在 [Basescan Sepolia](https://sepolia.basescan.org) **验证合约**，便于排查。
 
@@ -56,7 +57,7 @@ forge script script/DeployPayFiEscrow.s.sol:DeployPayFiEscrow \
 | `DATABASE_URL` | Neon 连接串 |
 | `CHAIN_ID` | `84532` |
 | `CHAIN_RPC_URL` | `https://sepolia.base.org` 或 Alchemy / Infura 等带 Key 的 URL（公网建议带 Key，减轻限流） |
-| `ESCROW_ADDRESS` | 2.1 步部署的合约地址 |
+| `ESCROW_ADDRESS` | 2.1 步部署的地址；可与 [`.env.example`](../.env.example) 中示例 `0x3FCE185…` 相同 |
 | `SUBMITTER_PRIVATE_KEY` | 代发 `release` / `refund`；若留空可仅配 `DEPLOYER_PRIVATE_KEY`（行为见代码与 `.env.example`） |
 | `PAYFIDEMO_DEBUG` | 公网务必 **`false`** |
 | `X402_ENABLED` | 按需，一般为 `false` |

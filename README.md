@@ -37,6 +37,8 @@ forge script script/DeployPayFiEscrow.s.sol:DeployPayFiEscrow --rpc-url "$RPC_UR
 
 将部署得到的地址写入 `.env` 的 `ESCROW_ADDRESS`，与 API 里 EIP-712 `domain.verifyingContract` 一致。
 
+**Base Sepolia（仓库已记录的一次部署）**：`PayFiEscrow` **`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`** — [Basescan Sepolia](https://sepolia.basescan.org/address/0x3FCE185FFF78dDB1120C606A0611e168646a0CeA)。与 [`.env.example`](.env.example) 中 **`ESCROW_ADDRESS`** 一致；生产或自有环境请自部署并替换。
+
 ## Anvil 本地联调（推荐）
 
 终端 A 启动链（同时开 IPC，供 `forge` / `cast` 连接；Node 仍用 `http://127.0.0.1:8545`）：
