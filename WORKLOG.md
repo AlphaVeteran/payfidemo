@@ -13,7 +13,8 @@
 - 环境：Anvil 本地链（`chainId=31337`）。
 - `PayFiEscrow`：`0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512`（来源：`.env` + `broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
 - `MockERC20 (mUSDC)`：`0x5FbDB2315678afecb367f032d93F642f64180aa3`（来源：`broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
-- 备注：Base Sepolia 地址目前未在仓库文档中落地，后续部署后需同步更新此节与 `README.md`。
+- **Base Sepolia** 演示资产：**Circle 测试 USDC** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`（6 decimals）；前端在 `chainId=84532` 时默认使用该地址（见 `frontend/lib/token-addresses.ts`）。
+- 备注：**USDC 资产地址**已在文档与示例中固化；**PayFiEscrow 在 Base Sepolia 的部署合约地址**仍待部署后写入此节、`README.md` 与 Railway Variables。
 
 ## 已解决的问题
 
@@ -40,6 +41,28 @@
 - 不在截止前扩大范围到多链/主网/完整第三方结算协议真联调，优先保证单链路稳定可演示。
 
 ## 当日记录（按日期倒序：最新在上）
+
+## 当日记录（2026-04-05）
+
+【今日完成】
+- **分支**：继续在 **`feat/base-sepolia`** 上对齐 Base Sepolia 演示资产与前端创建意图体验。
+- **前端**：新增 **`frontend/lib/token-addresses.ts`**（Anvil MockERC20 与 Circle Base Sepolia USDC 常量及 **`defaultDemoAssetAddress`**）；**`payfi-demo.tsx`** 在 **`chainId=84532`** 下使用 **`parseUnits`** 将用户输入的 **USDC 十进制总额** 转为 **`amountTotal` / `amountPerLesson`**（按「最大释放次数」整除校验），**`user`** 取已连接钱包地址，**`merchant`** 可选 **`NEXT_PUBLIC_DEMO_MERCHANT`**；Anvil 路径仍用静态默认 **`amountTotal`** 与链上默认 **`asset`**。
+- **文档与示例**：**`README.md`** 区分 Anvil 与 Base Sepolia 的 **`asset`** 与最小单位说明；**`docs/railway-base-sepolia-deploy.md`** 写明 Circle 测试 USDC 地址与 6 decimals；**`WORKLOG`**「当前合约地址」补充 Base Sepolia USDC 并区分资产与 Escrow 部署备注。
+- **`.env.example`**：可选 **`BASE_URL`**（仅便于 `source` 后冒烟 `curl`，服务端不读）、**`DATABASE_URL`** 占位与 Neon URL 含 **`&`** 时的引号提示、Base Sepolia **`asset`** 注释与 Circle 文档链接。
+- **部署脚本**：**`script/DeployPayFiEscrow.s.sol`** 增加 **`privateKeyFromEnv`**，兼容 **`PRIVATE_KEY`** 为 **`0x` 前缀或 64 位十六进制**（与仓库其它 env 风格一致）。
+- **本地调试页**：**`web/index.html`** 默认 **Asset** 改为 Base Sepolia Circle USDC 地址（与线上演示资产一致）。
+
+【未完成】
+- Base Sepolia 上 **PayFiEscrow 实际地址** 与 Basescan 链接仍待部署后写入 **`WORKLOG` / `README`** 与 Railway。
+- Base Sepolia 端到端（领测试 USDC、approve、**`createAndDeposit`**、双签 release）的联调验证与录屏可按需补记。
+
+【代码证据】
+- `frontend/lib/token-addresses.ts`、`frontend/components/payfi-demo.tsx`
+- `.env.example`、`README.md`、`WORKLOG.md`、`docs/railway-base-sepolia-deploy.md`
+- `script/DeployPayFiEscrow.s.sol`、`web/index.html`
+
+【明日第一任务建议（只能一个）】
+- 在 Base Sepolia **部署 PayFiEscrow**（`forge script ... DeployPayFiEscrow`），将 **`ESCROW_ADDRESS`** 与 **`asset`**（USDC）写入环境，按 **`docs/railway-base-sepolia-deploy.md`** 完成一次 **`GET /health`** 与 **创建 intent → funding** 的冒烟验证。
 
 ## 当日记录（2026-04-04）
 

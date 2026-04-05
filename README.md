@@ -79,8 +79,8 @@ MERCHANT_PRIVATE_KEY=<Anvil 账户 #1 私钥>
 | deployer/relayer（#2） | `0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC` |
 
 1. `npm run dev` 启动 API。  
-2. `POST /intents` 创建意图（`asset` = MockERC20 地址，`amountTotal` / `amountPerLesson` 用 **wei** 字符串，且满足 `maxReleases * amountPerLesson == amountTotal`）。  
-3. `GET /intents/:id/funding/hint` 取 `to` / `data`。用户 #0 需先 **授权** Escrow 划转 `amountTotal` 的 MockERC20，再 `createAndDeposit`（否则会 `ERC20InsufficientAllowance`）。
+2. `POST /intents` 创建意图（**Anvil**：`asset` = 本地 MockERC20 地址；**Base Sepolia**：`asset` = Circle 测试 USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`，6 decimals）。`amountTotal` / `amountPerLesson` 为 **最小单位** 十进制字符串，且满足 `maxReleases * amountPerLesson == amountTotal`。  
+3. `GET /intents/:id/funding/hint` 取 `to` / `data`。用户需先对 `asset` **授权** Escrow 划转 `amountTotal`，再 `createAndDeposit`（否则会 `ERC20InsufficientAllowance`）。
 
 较旧的 Foundry 上 `cast send` **没有** `--data`，请用函数签名 + 参数（与 hint 的 `data` 等价）：
 
@@ -89,7 +89,7 @@ export PATH="$HOME/.foundry/bin:$PATH"
 set -a && source .env && set +a
 cast send --rpc-url /tmp/payfi-anvil.ipc \
   --private-key "$USER_PRIVATE_KEY" \
-  <MOCK_ERC20> \
+  <ASSET_ERC20> \
   "approve(address,uint256)" \
   <ESCROW> \
   <AMOUNT_TOTAL_WEI>

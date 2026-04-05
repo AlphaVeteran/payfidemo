@@ -15,6 +15,7 @@ import { useSearchParams } from "next/navigation";
 import {
   erc20Abi,
   getAddress,
+  parseUnits,
   recoverTypedDataAddress,
   type PublicClient,
 } from "viem";
@@ -31,6 +32,11 @@ import {
 } from "@/lib/payfi-api";
 import { domainFromApi, releaseMessageFromApi } from "@/lib/release-typed-data";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
+import { baseSepolia } from "wagmi/chains";
+import {
+  BASE_SEPOLIA_USDC_DECIMALS,
+  defaultDemoAssetAddress,
+} from "@/lib/token-addresses";
 
 /** Anvil + Rabby：RPC/链不一致或重启链后，旧 tx 会表现为长时间等不到回执。 */
 async function waitTxReceipt(client: PublicClient, hash: `0x${string}`) {
@@ -51,10 +57,40 @@ async function waitTxReceipt(client: PublicClient, hash: `0x${string}`) {
   }
 }
 
-const defaultCreateBody = {
+function sepoliaUsdcToIntentAmounts(
+  usdcDecimalStr: string,
+  maxReleases: number,
+): { amountTotal: string; amountPerLesson: string } {
+  if (!Number.isInteger(maxReleases) || maxReleases < 1) {
+    throw new Error("最大释放次数须为 ≥1 的整数。");
+  }
+  const trimmed = usdcDecimalStr.trim();
+  if (!trimmed) {
+    throw new Error("请输入托管总额（USDC）。");
+  }
+  let total: bigint;
+  try {
+    total = parseUnits(trimmed, BASE_SEPOLIA_USDC_DECIMALS);
+  } catch {
+    throw new Error("USDC 金额格式无效（示例：1000 或 0.5）。");
+  }
+  if (total <= BigInt(0)) {
+    throw new Error("托管总额须大于 0。");
+  }
+  const mr = BigInt(maxReleases);
+  if (total % mr !== BigInt(0)) {
+    throw new Error(
+      `总额按最小单位须能被 ${maxReleases} 整除（均分每节）。请调整金额或「最大释放次数」。`,
+    );
+  }
+  const per = total / mr;
+  return { amountTotal: total.toString(), amountPerLesson: per.toString() };
+}
+
+const defaultCreateBodyStatic = {
   merchant: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   user: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  asset: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  /** Anvil Mock 18 decimals；Base Sepolia 创建时使用用户输入 USDC，不经此默认值 */
   amountTotal: "1000000000",
   amountPerLesson: "100000000",
   maxReleases: 10,
@@ -110,6 +146,11 @@ export default function PayFiDemo() {
   const effectiveChainId = mounted ? chainId : targetChainId;
   const effectiveAddress = mounted ? address : null;
 
+  const defaultCreateBody = {
+    ...defaultCreateBodyStatic,
+    asset: defaultDemoAssetAddress(targetChainId),
+  };
+
   const [intentId, setIntentId] = useState("");
   const [intent, setIntent] = useState<IntentRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +163,8 @@ export default function PayFiDemo() {
   );
   const [releasePrep, setReleasePrep] = useState<ReleasePrepareResponse | null>(null);
   const [releaseHint, setReleaseHint] = useState<string | null>(null);
+  const [sepoliaTotalUsdc, setSepoliaTotalUsdc] = useState("1000");
+  const [sepoliaMaxReleases, setSepoliaMaxReleases] = useState("10");
 
   const refreshIntent = useCallback(async () => {
     if (!intentId.trim()) {
@@ -200,7 +243,29 @@ export default function PayFiDemo() {
     setError(null);
     setBusy("create");
     try {
-      const { intentId: id } = await createIntent(defaultCreateBody as Record<string, unknown>);
+      let body: Record<string, unknown> = { ...defaultCreateBody };
+      if (targetChainId === baseSepolia.id) {
+        if (!address) {
+          throw new Error("Base Sepolia 请先连接钱包（将作为 intent user）。");
+        }
+        const maxRel = Number.parseInt(sepoliaMaxReleases, 10);
+        const { amountTotal, amountPerLesson } = sepoliaUsdcToIntentAmounts(
+          sepoliaTotalUsdc,
+          maxRel,
+        );
+        body = {
+          ...body,
+          user: getAddress(address),
+          amountTotal,
+          amountPerLesson,
+          maxReleases: maxRel,
+        };
+        const dm = process.env.NEXT_PUBLIC_DEMO_MERCHANT?.trim();
+        if (dm) {
+          body = { ...body, merchant: getAddress(dm as `0x${string}`) };
+        }
+      }
+      const { intentId: id } = await createIntent(body);
       setIntentId(id);
       setUserSig(null);
       setMerchantSig(null);
@@ -456,6 +521,38 @@ export default function PayFiDemo() {
 
       <section className="payfi-card space-y-4 p-5">
         <h2 className="text-base font-semibold text-zinc-100">1) 创建意图</h2>
+        {targetChainId === baseSepolia.id && (
+          <>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              使用 Circle Base Sepolia USDC{" "}
+              <span className="font-mono text-zinc-400">{defaultCreateBody.asset}</span>
+              （{BASE_SEPOLIA_USDC_DECIMALS} decimals）。总额将均分为「最大释放次数」笔；商家地址可通过{" "}
+              <span className="font-mono text-zinc-400">NEXT_PUBLIC_DEMO_MERCHANT</span>{" "}
+              配置；未配置时仍为 Anvil 演示商家地址（双签需对应私钥）。
+            </p>
+            <Field label="托管总额（USDC）">
+              <input
+                className="payfi-input font-mono text-sm"
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
+                value={sepoliaTotalUsdc}
+                onChange={(e) => setSepoliaTotalUsdc(e.target.value)}
+                placeholder="例如 1000 或 0.5"
+              />
+            </Field>
+            <Field label="最大释放次数（均分总额，须整除）">
+              <input
+                className="payfi-input w-full max-w-[12rem] font-mono text-sm"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={sepoliaMaxReleases}
+                onChange={(e) => setSepoliaMaxReleases(e.target.value.replace(/\D/g, "") || "1")}
+              />
+            </Field>
+          </>
+        )}
         <button
           type="button"
           disabled={Boolean(busy)}

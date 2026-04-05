@@ -35,7 +35,7 @@ forge script script/DeployPayFiEscrow.s.sol:DeployPayFiEscrow \
 ```
 
 - 将部署得到的 **Escrow 合约地址** 写入 Railway API 服务的 **`ESCROW_ADDRESS`**。
-- 创建 intent 时的 **`asset`** 必须与链上使用的代币地址一致（例如 Base Sepolia 测试 USDC）。
+- 创建 intent 时的 **`asset`** 必须与链上使用的代币地址一致。Base Sepolia 建议使用 **Circle 测试 USDC**：`0x036CbD53842c5426634e7929541eC2318f3dCF7e`（**6 decimals**，见 [Circle USDC 合约列表](https://developers.circle.com/stablecoins/usdc-contract-addresses)）。
 - 可选：在 [Basescan Sepolia](https://sepolia.basescan.org) **验证合约**，便于排查。
 
 ### 2.2 Neon
