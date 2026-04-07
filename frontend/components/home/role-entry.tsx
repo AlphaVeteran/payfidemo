@@ -5,31 +5,87 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { listIntents, type IntentRecord } from "@/lib/payfi-api";
 import PayFiLogo from "@/components/ui/payfi-logo";
+import { useI18n } from "@/lib/i18n";
 
 type Role = "user" | "merchant";
 
 const roleStorageKey = "payfi.role";
 const recentStorageKey = "payfi.lastIntentId";
 
-function statusText(status: string) {
+function statusText(status: string, locale: "zh-CN" | "zh-TW" | "en") {
   switch (status) {
     case "awaiting_funding":
-      return "待支付";
+      return locale === "en" ? "Awaiting Funding" : "待支付";
     case "active":
-      return "托管中";
+      return locale === "en" ? "In Escrow" : locale === "zh-TW" ? "託管中" : "托管中";
     case "partially_settled":
-      return "部分结算";
+      return locale === "en" ? "Partially Settled" : locale === "zh-TW" ? "部分結算" : "部分结算";
     case "settled":
-      return "已结算";
+      return locale === "en" ? "Settled" : locale === "zh-TW" ? "已結算" : "已结算";
     case "refunded":
-      return "已退款";
+      return locale === "en" ? "Refunded" : "已退款";
     default:
       return status;
   }
 }
 
 export default function RoleEntry() {
+  const { locale } = useI18n();
   const router = useRouter();
+  const text = {
+    "zh-CN": {
+      subtitle: "选择角色进入流程，或通过合同意向编号（intentId）继续上次操作。",
+      userRole: "用户",
+      merchantRole: "商家",
+      iAmUser: "我是用户",
+      iAmUserDesc: "支付并跟踪托管与结算进度",
+      userCta: "进入用户工作台 →",
+      iAmMerchant: "我是商家",
+      iAmMerchantDesc: "查看合同意向、状态、历史与用户消费",
+      merchantCta: "进入商家控制台 →",
+      continueFlow: "继续上次流程",
+      inputPlaceholder: "输入合同意向编号（intentId）",
+      continue: "继续",
+      perspective: "将以「{role}」视角打开详情",
+      recent: "最近记录",
+      empty: "暂无记录",
+    },
+    "zh-TW": {
+      subtitle: "選擇角色進入流程，或透過合同意向編號（intentId）繼續上次操作。",
+      userRole: "使用者",
+      merchantRole: "商家",
+      iAmUser: "我是使用者",
+      iAmUserDesc: "支付並追蹤託管與結算進度",
+      userCta: "進入使用者工作台 →",
+      iAmMerchant: "我是商家",
+      iAmMerchantDesc: "查看合同意向、狀態、歷史與使用者消費",
+      merchantCta: "進入商家控制台 →",
+      continueFlow: "繼續上次流程",
+      inputPlaceholder: "輸入合同意向編號（intentId）",
+      continue: "繼續",
+      perspective: "將以「{role}」視角開啟詳情",
+      recent: "最近記錄",
+      empty: "暫無記錄",
+    },
+    en: {
+      subtitle:
+        "Choose a role to enter the flow, or continue with a Contract Intent ID (intentId).",
+      userRole: "User",
+      merchantRole: "Merchant",
+      iAmUser: "I am a User",
+      iAmUserDesc: "Pay and track escrow & settlement progress",
+      userCta: "Open User Console →",
+      iAmMerchant: "I am a Merchant",
+      iAmMerchantDesc: "View contract intents, status, history and user spend",
+      merchantCta: "Open Merchant Console →",
+      continueFlow: "Continue Previous Flow",
+      inputPlaceholder: "Enter Contract Intent ID (intentId)",
+      continue: "Continue",
+      perspective: "Open details as {role}",
+      recent: "Recent Records",
+      empty: "No records yet",
+    },
+  }[locale];
   const [intentIdInput, setIntentIdInput] = useState("");
   const [role, setRole] = useState<Role>("user");
   const [recent, setRecent] = useState<IntentRecord[]>([]);
@@ -73,9 +129,7 @@ export default function RoleEntry() {
             <span className="payfi-title-gradient">PayFi</span>
             <span className="text-zinc-100"> Demo</span>
           </h1>
-          <p className="text-sm leading-relaxed text-zinc-400">
-            选择角色进入流程，或通过 intentId 继续上次操作。
-          </p>
+          <p className="text-sm leading-relaxed text-zinc-400">{text.subtitle}</p>
         </div>
       </header>
 
@@ -88,7 +142,7 @@ export default function RoleEntry() {
             window.localStorage.setItem(roleStorageKey, "user");
           }}
         >
-          用户
+          {text.userRole}
         </button>
         <button
           type="button"
@@ -98,7 +152,7 @@ export default function RoleEntry() {
             window.localStorage.setItem(roleStorageKey, "merchant");
           }}
         >
-          商家
+          {text.merchantRole}
         </button>
       </div>
 
@@ -108,28 +162,28 @@ export default function RoleEntry() {
           onClick={() => gotoRole("user")}
           className="payfi-card payfi-card-hover p-5 text-left"
         >
-          <h2 className="text-lg font-semibold text-zinc-100">我是用户</h2>
-          <p className="mt-1 text-sm text-zinc-400">支付并跟踪托管与结算进度</p>
-          <p className="mt-4 text-xs font-semibold text-sky-400">进入用户工作台 →</p>
+          <h2 className="text-lg font-semibold text-zinc-100">{text.iAmUser}</h2>
+          <p className="mt-1 text-sm text-zinc-400">{text.iAmUserDesc}</p>
+          <p className="mt-4 text-xs font-semibold text-sky-400">{text.userCta}</p>
         </button>
         <button
           type="button"
           onClick={() => gotoRole("merchant")}
           className="payfi-card payfi-card-hover p-5 text-left"
         >
-          <h2 className="text-lg font-semibold text-zinc-100">我是商家</h2>
-          <p className="mt-1 text-sm text-zinc-400">查看意图、状态、历史与用户消费</p>
-          <p className="mt-4 text-xs font-semibold text-violet-300">进入商家控制台 →</p>
+          <h2 className="text-lg font-semibold text-zinc-100">{text.iAmMerchant}</h2>
+          <p className="mt-1 text-sm text-zinc-400">{text.iAmMerchantDesc}</p>
+          <p className="mt-4 text-xs font-semibold text-violet-300">{text.merchantCta}</p>
         </button>
       </section>
 
       <section className="payfi-card space-y-4 p-5">
-        <h3 className="text-sm font-semibold tracking-wide text-zinc-300">继续上次流程</h3>
+        <h3 className="text-sm font-semibold tracking-wide text-zinc-300">{text.continueFlow}</h3>
         <div className="flex flex-col gap-3">
           <input
             value={intentIdInput}
             onChange={(e) => setIntentIdInput(e.target.value)}
-            placeholder="输入 intentId"
+            placeholder={text.inputPlaceholder}
             className="payfi-input font-mono text-xs"
           />
           {continueHref ? (
@@ -138,22 +192,24 @@ export default function RoleEntry() {
               onClick={() => window.localStorage.setItem(recentStorageKey, intentIdInput.trim())}
               className="payfi-btn-primary w-full text-center no-underline"
             >
-              继续
+              {text.continue}
             </Link>
           ) : (
             <button type="button" disabled className="payfi-btn-primary w-full">
-              继续
+              {text.continue}
             </button>
           )}
         </div>
-        <p className="text-xs text-zinc-500">将以「{role === "user" ? "用户" : "商家"}」视角打开详情</p>
+        <p className="text-xs text-zinc-500">
+          {text.perspective.replace("{role}", role === "user" ? text.userRole : text.merchantRole)}
+        </p>
       </section>
 
       <section className="payfi-card space-y-3 p-5">
-        <h3 className="text-sm font-semibold text-zinc-300">最近记录</h3>
+        <h3 className="text-sm font-semibold text-zinc-300">{text.recent}</h3>
         {error && <p className="text-xs text-amber-200/90">{error}</p>}
         {recent.length === 0 ? (
-          <p className="text-sm text-zinc-500">暂无记录</p>
+          <p className="text-sm text-zinc-500">{text.empty}</p>
         ) : (
           <div className="space-y-2">
             {recent.map((item) => (
@@ -164,7 +220,9 @@ export default function RoleEntry() {
                 className="payfi-card payfi-card-hover flex items-center justify-between gap-2 px-3 py-2.5 no-underline"
               >
                 <span className="truncate font-mono text-[11px] text-zinc-300">{item.intentId}</span>
-                <span className="shrink-0 text-xs text-zinc-500">{statusText(item.status)}</span>
+                <span className="shrink-0 text-xs text-zinc-500">
+                  {statusText(item.status, locale)}
+                </span>
               </Link>
             ))}
           </div>

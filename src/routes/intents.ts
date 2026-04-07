@@ -382,10 +382,28 @@ router.post("/:intentId/release/submit", async (req, res) => {
       });
       const onChainNonce = onChain[10];
       if (onChainNonce !== BigInt(row.releaseNonce)) {
-        res.status(400).json({
+        const localBefore = row.releaseNonce;
+        // Self-heal local snapshot from chain when nonce drifts (e.g. another client already released).
+        row.releaseCount = Number(onChain[6]);
+        row.releasedTotal = onChain[7].toString();
+        row.releaseNonce = Number(onChainNonce);
+        if (row.releasedTotal === row.amountTotal) {
+          row.status = "settled";
+        } else if (row.releaseCount > 0) {
+          row.status = "partially_settled";
+        } else {
+          row.status = "active";
+        }
+        await intentStore.saveIntent(row);
+
+        res.status(409).json({
           error: "releaseNonce desync",
           onChain: onChainNonce.toString(),
-          local: row.releaseNonce,
+          local: localBefore,
+          synced: true,
+          status: row.status,
+          releaseCount: row.releaseCount,
+          releasedTotal: row.releasedTotal,
         });
         return;
       }

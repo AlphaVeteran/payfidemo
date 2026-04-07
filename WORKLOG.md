@@ -28,7 +28,7 @@
 
 ## 待解决的问题
 
-- Railway / 其它线上环境：将 **`ESCROW_ADDRESS`**（可与 `.env.example` 示例一致或替换为自有部署）、**`CHAIN_ID=84532`**、**`CHAIN_RPC_URL`**、**`asset`=USDC** 与 Neon **`DATABASE_URL`** 配齐后，完成 **`GET /health`** 与 **创建 intent → funding** 的联网冒烟并记入 WORKLOG。
+- Railway API（`payfidemo-production`）：**`GET /health`**（**`persistence: postgres`**）、**创建 intent**、**Restart 后同一 `intentId` 仍可 `GET`** 已于 **2026-04-07** 验收记入本 WORKLOG；公网 **链上 funding（`approve` + `createAndDeposit` → `funding/tx`）** 仍可补做。
 - 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**webhook 投递记录**等仍缺可靠落库与重试闭环。
 - 完成 webhook 投递可靠性闭环：签名/HMAC、重试策略、幂等去重落库与可观测性。
 - 完成前端主路径（创建意图、充值提示、双签提交、状态展示、退款操作）并打通演示录屏。
@@ -43,6 +43,25 @@
 - 不在截止前扩大范围到多链/主网/完整第三方结算协议真联调，优先保证单链路稳定可演示。
 
 ## 当日记录（按日期倒序：最新在上）
+
+## 当日记录（2026-04-07）
+
+【今日完成】
+- **Railway API**（公网根域 **`payfidemo-production.up.railway.app`**）：**`GET /health`** 确认 **`ok: true`**、**`chainId`/`walletChainId`: 84532**、**`escrowConfigured: true`**、**`persistence: postgres`**（Neon **`DATABASE_URL`** 在 API Service 生效）；**Deploy Logs** 可见 **`[payfidemo] Postgres persistence enabled (DATABASE_URL)`** 与进程监听 Railway 注入的 **`PORT`**（日志文案仍写 `127.0.0.1`，属控制台提示）。
+- **排错与现象**：**`Application failed to respond` / 502**、HTTP 耗时约 **15s** 与 **Neon compute idle**、启动阶段 **`await runMigrations` 完成后才 `listen`** 叠加时的关系；**Deploy Logs** vs **HTTP Logs** 分工；**`GET .../intents/null`** 来自 **POST 失败或非 JSON 时 `jq -r .intentId` 为 `null`**。
+- **CDN**：**`/health`** 使用 **`?ts=$(date +%s)`** 等 query 避免 **Fastly** 边缘对 JSON 的缓存导致误判（曾出现 **`persistence: memory`** 旧响应与线上真实状态不一致）。
+- **持久化验收**：**Restart/Redeploy** API 后 **`GET /api/payfi/v1/intents/{intentId}`** 仍返回完整 intent；示例记录 **`intentId=307de31b-99a4-45a7-99d9-b173afebcf8d`**，**`createdAt=2026-04-07T04:21:34.908Z`**，**`status=awaiting_funding`**。
+- **安全备忘**：**`/health` 字段 `chainRpc`** 含完整 **RPC URL（含 Alchemy key）**，公网可读；已提醒 **轮换密钥** 与后续在代码侧 **脱敏**（当日未改仓库）。
+
+【未完成】
+- 公网 **Base Sepolia** 真实 **`funding/tx`**（链上充值回执）一轮冒烟与录屏。
+- **`/health` 的 `chainRpc` 脱敏**、Alchemy **密钥轮换**（运维 + 可选代码改动）。
+
+【代码证据】
+- 无当日仓库代码变更；验证手段为 **Railway Variables / Neon** 与本地 **`curl`**。
+
+【明日第一任务建议（只能一个）】
+- 公网跑通 **链上 funding → `POST .../funding/tx`**（真实 **`txHash`**），或优先落地 **`/health` 不返回明文 RPC 密钥**并轮换 Alchemy Key 后重部署。
 
 ## 当日记录（2026-04-05）
 
