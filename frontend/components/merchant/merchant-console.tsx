@@ -61,6 +61,9 @@ export default function MerchantConsole() {
       subtitle: "合同意向 · 状态 · 历史 · 用户消费",
       home: "首页",
       userSide: "用户端",
+      homeDesc: "返回角色入口与最近记录",
+      userSideDesc: "进入用户工作台进行签名与支付",
+      openCta: "进入 →",
       refresh: "刷新",
       refreshing: "刷新中…",
       overview: "总览",
@@ -89,6 +92,9 @@ export default function MerchantConsole() {
       subtitle: "合同意向 · 狀態 · 歷史 · 使用者消費",
       home: "首頁",
       userSide: "使用者端",
+      homeDesc: "返回角色入口與最近記錄",
+      userSideDesc: "進入使用者工作台進行簽名與支付",
+      openCta: "進入 →",
       refresh: "刷新",
       refreshing: "刷新中…",
       overview: "總覽",
@@ -117,6 +123,9 @@ export default function MerchantConsole() {
       subtitle: "Contract Intents · Status · History · User Spend",
       home: "Home",
       userSide: "User Side",
+      homeDesc: "Back to role entry and recent records",
+      userSideDesc: "Open user console for signing and payments",
+      openCta: "Open →",
       refresh: "Refresh",
       refreshing: "Refreshing…",
       overview: "Overview",
@@ -233,18 +242,25 @@ export default function MerchantConsole() {
             <p className="mt-1 text-xs text-zinc-500">{text.subtitle}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/" className="payfi-link">
-            {text.home}
-          </Link>
-          <Link href="/user" className="payfi-link">
-            {text.userSide}
-          </Link>
+        <div className="flex flex-wrap items-center gap-2 pr-20 sm:pr-32">
           <button type="button" onClick={() => void reload()} className="payfi-btn-primary text-xs">
             {loading ? text.refreshing : text.refresh}
           </button>
         </div>
       </header>
+
+      <section className="grid gap-3 sm:grid-cols-2">
+        <Link href="/" className="payfi-card payfi-card-hover p-4 text-left no-underline">
+          <h2 className="text-sm font-semibold text-zinc-100">{text.home}</h2>
+          <p className="mt-1 text-xs text-zinc-400">{text.homeDesc}</p>
+          <p className="mt-3 text-xs font-semibold text-sky-300">{text.openCta}</p>
+        </Link>
+        <Link href="/user" className="payfi-card payfi-card-hover p-4 text-left no-underline">
+          <h2 className="text-sm font-semibold text-zinc-100">{text.userSide}</h2>
+          <p className="mt-1 text-xs text-zinc-400">{text.userSideDesc}</p>
+          <p className="mt-3 text-xs font-semibold text-violet-300">{text.openCta}</p>
+        </Link>
+      </section>
 
       {error && <div className="payfi-alert-error">{error}</div>}
 

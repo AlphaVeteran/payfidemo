@@ -14,6 +14,7 @@ import {
 import { useSearchParams } from "next/navigation";
 import {
   erc20Abi,
+  formatUnits,
   getAddress,
   parseUnits,
   recoverTypedDataAddress,
@@ -27,6 +28,7 @@ import {
   fundingHint,
   getIntent,
   postFundingTx,
+  refundIntent,
   releasePrepare,
   releaseSubmit,
   type IntentRecord,
@@ -108,6 +110,11 @@ function parseCycleHoursToDurationSeconds(hoursStr: string): number {
   }
   return sec;
 }
+
+/** Base Sepolia（Circle 测试 USDC）创建意向的默认表单：10 USDC、均分 5 次释放、链上周期 2 小时 */
+const BASE_SEPOLIA_DEFAULT_USDC_TOTAL = "10";
+const BASE_SEPOLIA_DEFAULT_MAX_RELEASES = "5";
+const BASE_SEPOLIA_DEFAULT_CYCLE_HOURS = "2";
 
 const defaultCreateBodyStatic = {
   merchant: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -194,10 +201,10 @@ export default function PayFiDemo() {
         "默认使用 Circle Base Sepolia 测试 USDC（{decimals} decimals）。托管总额将均分为「释放次数」笔；「托管周期」对应链上 escrow 到期前可释放/退款的时间窗（秒级精度由小时换算）。商家地址可通过 NEXT_PUBLIC_DEMO_MERCHANT 配置；未配置时仍为 Anvil 演示商家地址（双签需对应私钥）。",
       usdcAddressLabel: "USDC 合约地址（Circle 测试网默认已填，可改）",
       totalEscrowLabel: "托管总额（USDC）",
-      totalEscrowPlaceholder: "例如 100 或 0.5",
+      totalEscrowPlaceholder: "例如 10 或 100",
       releaseCountLabel: "释放次数（均分总额，须整除）",
       cycleHoursLabel: "托管周期（小时，链上 duration）",
-      cycleHoursPlaceholder: "例如 8",
+      cycleHoursPlaceholder: "例如 2",
       fundingHint: "使用 {user} 连接钱包并切换网络，然后授权并入金。",
       approving: "授权中…",
       approveToken: "1. 授权代币",
@@ -217,6 +224,14 @@ export default function PayFiDemo() {
       signAsMerchant: "商家签名",
       submitting: "提交中…",
       submitRelease: "提交释放",
+      refundRemaining: "4) 剩余金额退回",
+      refundRemainingBtn: "剩余金额退回",
+      refunding: "退回中…",
+      refundNotExpired: "尚未到期，当前不可退款。请在到期后再操作。",
+      refundExpiredReady: "已到期，可将剩余金额退回用户。",
+      refundTarget: "退回地址",
+      refundAmount: "退回金额",
+      refundDone: "已发起退款交易。",
     },
     "zh-TW": {
       userWorkbench: "使用者工作台",
@@ -261,10 +276,10 @@ export default function PayFiDemo() {
         "預設使用 Circle Base Sepolia 測試 USDC（{decimals} decimals）。託管總額將均分為「釋放次數」筆；「託管週期」對應鏈上 escrow 到期前可釋放/退款的時間窗（秒級精度由小時換算）。商家地址可透過 NEXT_PUBLIC_DEMO_MERCHANT 設定；未設定時仍為 Anvil 示範商家地址（雙簽需對應私鑰）。",
       usdcAddressLabel: "USDC 合約地址（Circle 測試網預設已填，可改）",
       totalEscrowLabel: "託管總額（USDC）",
-      totalEscrowPlaceholder: "例如 100 或 0.5",
+      totalEscrowPlaceholder: "例如 10 或 100",
       releaseCountLabel: "釋放次數（均分總額，須整除）",
       cycleHoursLabel: "託管週期（小時，鏈上 duration）",
-      cycleHoursPlaceholder: "例如 8",
+      cycleHoursPlaceholder: "例如 2",
       fundingHint: "使用 {user} 連接錢包並切換網路，然後授權並入金。",
       approving: "授權中…",
       approveToken: "1. 授權代幣",
@@ -284,6 +299,14 @@ export default function PayFiDemo() {
       signAsMerchant: "商家簽名",
       submitting: "提交中…",
       submitRelease: "提交釋放",
+      refundRemaining: "4) 退回剩餘金額",
+      refundRemainingBtn: "退回剩餘金額",
+      refunding: "退回中…",
+      refundNotExpired: "尚未到期，目前不可退款。請在到期後再操作。",
+      refundExpiredReady: "已到期，可將剩餘金額退回使用者。",
+      refundTarget: "退回地址",
+      refundAmount: "退回金額",
+      refundDone: "已送出退款交易。",
     },
     en: {
       userWorkbench: "User Console",
@@ -328,10 +351,10 @@ export default function PayFiDemo() {
         "Uses Circle Base Sepolia test USDC ({decimals} decimals). Total escrow is split evenly by release count. Cycle hours map to on-chain escrow duration. Merchant can be set with NEXT_PUBLIC_DEMO_MERCHANT.",
       usdcAddressLabel: "USDC Contract Address (Circle testnet default prefilled)",
       totalEscrowLabel: "Total Escrow (USDC)",
-      totalEscrowPlaceholder: "e.g. 100 or 0.5",
+      totalEscrowPlaceholder: "e.g. 10 or 100",
       releaseCountLabel: "Release Count (must divide total evenly)",
       cycleHoursLabel: "Escrow Cycle (hours, on-chain duration)",
-      cycleHoursPlaceholder: "e.g. 8",
+      cycleHoursPlaceholder: "e.g. 2",
       fundingHint: "Use wallet {user}, switch network, then approve and deposit.",
       approving: "Approving…",
       approveToken: "1. Approve Token",
@@ -351,6 +374,14 @@ export default function PayFiDemo() {
       signAsMerchant: "Sign as merchant",
       submitting: "Submitting…",
       submitRelease: "Submit release",
+      refundRemaining: "4) Return Remaining Funds",
+      refundRemainingBtn: "Return Remaining Funds",
+      refunding: "Refunding…",
+      refundNotExpired: "Escrow has not expired yet, so refund is unavailable.",
+      refundExpiredReady: "Escrow expired. Remaining funds can be returned to the user.",
+      refundTarget: "Return Address",
+      refundAmount: "Return Amount",
+      refundDone: "Refund transaction submitted.",
     },
   }[locale];
   const { address, isConnected, connector } = useAccount();
@@ -394,10 +425,11 @@ export default function PayFiDemo() {
   );
   const [releasePrep, setReleasePrep] = useState<ReleasePrepareResponse | null>(null);
   const [releaseHint, setReleaseHint] = useState<string | null>(null);
+  const [refundResult, setRefundResult] = useState<Record<string, unknown> | null>(null);
   const [walletPickerOpen, setWalletPickerOpen] = useState(false);
-  const [sepoliaTotalUsdc, setSepoliaTotalUsdc] = useState("100");
-  const [sepoliaMaxReleases, setSepoliaMaxReleases] = useState("5");
-  const [sepoliaCycleHours, setSepoliaCycleHours] = useState("8");
+  const [sepoliaTotalUsdc, setSepoliaTotalUsdc] = useState(BASE_SEPOLIA_DEFAULT_USDC_TOTAL);
+  const [sepoliaMaxReleases, setSepoliaMaxReleases] = useState(BASE_SEPOLIA_DEFAULT_MAX_RELEASES);
+  const [sepoliaCycleHours, setSepoliaCycleHours] = useState(BASE_SEPOLIA_DEFAULT_CYCLE_HOURS);
   const [sepoliaAssetAddress, setSepoliaAssetAddress] = useState<string>(
     BASE_SEPOLIA_USDC_ADDRESS,
   );
@@ -737,6 +769,40 @@ export default function PayFiDemo() {
     }
   };
 
+  const onRefundRemaining = async () => {
+    if (!intent) return;
+    setError(null);
+    setBusy("refund");
+    try {
+      const out = await refundIntent(intent.intentId);
+      setRefundResult(out as Record<string, unknown>);
+      if (typeof out.txHash === "string") {
+        setLastTx(out.txHash);
+      }
+      await refreshIntent();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remainingAmount = useMemo(() => {
+    if (!intent) return null;
+    try {
+      const total = BigInt(intent.amountTotal);
+      const released = BigInt(intent.releasedTotal);
+      return total > released ? total - released : BigInt(0);
+    } catch {
+      return null;
+    }
+  }, [intent]);
+
+  const refundExpired = useMemo(() => {
+    if (!intent?.expiresAt) return false;
+    return Date.now() >= intent.expiresAt * 1000;
+  }, [intent?.expiresAt]);
+
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 pb-12 pt-6 sm:px-6">
       <header className="payfi-card space-y-4 p-5">
@@ -1058,6 +1124,53 @@ export default function PayFiDemo() {
               <pre className="overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
                 {JSON.stringify(releaseResult, null, 2)}
               </pre>
+            )}
+          </section>
+        )}
+
+      {intent &&
+        (intent.status === "active" || intent.status === "partially_settled") &&
+        remainingAmount !== null &&
+        remainingAmount > BigInt(0) && (
+          <section className="payfi-card space-y-4 p-5">
+            <h2 className="text-base font-semibold text-zinc-100">{text.refundRemaining}</h2>
+            <p className="text-xs text-zinc-500">
+              {refundExpired ? text.refundExpiredReady : text.refundNotExpired}
+              {!refundExpired && intent.expiresAt
+                ? ` (${new Date(intent.expiresAt * 1000).toLocaleString()})`
+                : ""}
+            </p>
+            <div className="grid gap-2 rounded-xl border border-white/8 bg-black/35 px-3 py-3 text-xs text-zinc-400">
+              <p>
+                {text.refundTarget}{" "}
+                <span className="font-mono text-zinc-300">{intent.user}</span>
+              </p>
+              <p>
+                {text.refundAmount}{" "}
+                <span className="font-mono text-zinc-300">
+                  {targetChainId === baseSepolia.id
+                    ? `${formatUnits(remainingAmount, BASE_SEPOLIA_USDC_DECIMALS)} USDC (${remainingAmount.toString()})`
+                    : remainingAmount.toString()}
+                </span>
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={Boolean(busy) || !refundExpired}
+                onClick={() => void onRefundRemaining()}
+                className="payfi-btn-primary"
+              >
+                {busy === "refund" ? text.refunding : text.refundRemainingBtn}
+              </button>
+            </div>
+            {refundResult && (
+              <>
+                <div className="payfi-alert-warn">{text.refundDone}</div>
+                <pre className="overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
+                  {JSON.stringify(refundResult, null, 2)}
+                </pre>
+              </>
             )}
           </section>
         )}

@@ -34,7 +34,10 @@ export default function IntentDetail({ intentId }: Props) {
       user: "用户",
       merchant: "商家",
       home: "首页",
+      homeDesc: "返回角色入口与最近记录",
       switchTo: "切换",
+      switchDesc: "切换到另一端查看同一合同意向",
+      openCta: "进入 →",
       participants: "参与方",
       partyUser: "用户",
       partyMerchant: "商家",
@@ -57,7 +60,10 @@ export default function IntentDetail({ intentId }: Props) {
       user: "使用者",
       merchant: "商家",
       home: "首頁",
+      homeDesc: "返回角色入口與最近記錄",
       switchTo: "切換",
+      switchDesc: "切換到另一端查看同一合同意向",
+      openCta: "進入 →",
       participants: "參與方",
       partyUser: "使用者",
       partyMerchant: "商家",
@@ -80,7 +86,10 @@ export default function IntentDetail({ intentId }: Props) {
       user: "User",
       merchant: "Merchant",
       home: "Home",
+      homeDesc: "Back to role entry and recent records",
       switchTo: "Switch to",
+      switchDesc: "Open the same contract intent from the other role",
+      openCta: "Open →",
       participants: "Parties",
       partyUser: "User",
       partyMerchant: "Merchant",
@@ -157,13 +166,22 @@ export default function IntentDetail({ intentId }: Props) {
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/" className="payfi-link">
-            {text.home}
+        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2">
+          <Link href="/" className="payfi-card payfi-card-hover p-3 text-left no-underline">
+            <h2 className="text-xs font-semibold text-zinc-100">{text.home}</h2>
+            <p className="mt-1 text-[11px] text-zinc-400">{text.homeDesc}</p>
+            <p className="mt-2 text-[11px] font-semibold text-sky-300">{text.openCta}</p>
           </Link>
-          <Link href={role === "user" ? "/merchant" : "/user"} className="payfi-link">
-            {text.switchTo}
-            {role === "user" ? text.merchant : text.user}
+          <Link
+            href={role === "user" ? "/merchant" : "/user"}
+            className="payfi-card payfi-card-hover p-3 text-left no-underline"
+          >
+            <h2 className="text-xs font-semibold text-zinc-100">
+              {text.switchTo}
+              {role === "user" ? text.merchant : text.user}
+            </h2>
+            <p className="mt-1 text-[11px] text-zinc-400">{text.switchDesc}</p>
+            <p className="mt-2 text-[11px] font-semibold text-violet-300">{text.openCta}</p>
           </Link>
         </div>
       </header>

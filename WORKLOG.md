@@ -44,6 +44,31 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-08）
+
+【今日完成】
+- **前端信息架构与导航**：`/user`、`/merchant`、`/intent/[intentId]` 顶部导航由纯链接升级为卡片入口，补齐中英文本（home/switch 描述、统一 CTA），减少角色切换与返回首页时的跳转认知成本。
+- **商户/用户主流程补强**：`frontend/components/payfi-demo.tsx` 增加退款相关可视化与操作反馈（含剩余额度、到期状态、执行反馈）；`frontend/components/merchant/merchant-console.tsx` 与 `intent-detail.tsx` 对齐新导航与说明文案。
+- **前端 API 能力扩展**：`frontend/lib/payfi-api.ts` 新增 `refundIntent(intentId)`，统一前端发起退款提交接口，便于页面复用。
+- **后端链上状态一致性增强**：`src/routes/intents.ts` 新增 `escrowSnapshotFromEscrowsRead`，统一解析 `escrows` 读结果；`release/prepare` 与 `release/submit` 增加链上快照自愈/回写，降低多端并发下本地 nonce 与链上状态漂移。
+- **脚本稳定性改进**：`scripts/local-flow.mjs` 增加 `ensureErc20Allowance`（先清零再授权），兼容 USDC 等代币在非零 allowance 变更场景，避免联调时授权失败。
+
+【未完成】
+- 仍需在 Base Sepolia 公网环境完成一轮真实资金路径（funding/release/refund）冒烟并沉淀截图或录屏证据。
+
+【代码证据】
+- `frontend/app/user/page.tsx`
+- `frontend/components/intent/intent-detail.tsx`
+- `frontend/components/merchant/merchant-console.tsx`
+- `frontend/components/payfi-demo.tsx`
+- `frontend/lib/payfi-api.ts`
+- `src/routes/intents.ts`
+- `scripts/local-flow.mjs`
+- `WORKLOG.md`
+
+【明日第一任务建议（只能一个）】
+- 在 Base Sepolia 公网跑通一条完整示例（create -> funding/tx -> release -> refund），并把关键 `intentId/txHash/状态流转` 记录到下一条 WORKLOG。
+
 ## 当日记录（2026-04-07）
 
 【今日完成】
@@ -52,13 +77,17 @@
 - **CDN**：**`/health`** 使用 **`?ts=$(date +%s)`** 等 query 避免 **Fastly** 边缘对 JSON 的缓存导致误判（曾出现 **`persistence: memory`** 旧响应与线上真实状态不一致）。
 - **持久化验收**：**Restart/Redeploy** API 后 **`GET /api/payfi/v1/intents/{intentId}`** 仍返回完整 intent；示例记录 **`intentId=307de31b-99a4-45a7-99d9-b173afebcf8d`**，**`createdAt=2026-04-07T04:21:34.908Z`**，**`status=awaiting_funding`**。
 - **安全备忘**：**`/health` 字段 `chainRpc`** 含完整 **RPC URL（含 Alchemy key）**，公网可读；已提醒 **轮换密钥** 与后续在代码侧 **脱敏**（当日未改仓库）。
+- **代码提交与推送**：提交 **`cf65bc8`**（`feat(i18n): add bilingual UI support and update base sepolia flow`）并已推送至 **`origin/feat/base-sepolia`**；主要包含前端中英双语切换、Base Sepolia 相关演示流与文案对齐、`scripts/check-release.sh` 与 `WORKLOG` 更新。
+- **PR**：已创建 **Draft PR #1**（`feat/base-sepolia` -> `main`）：<https://github.com/AlphaVeteran/payfidemo/pull/1>；后续待 Base Sepolia 端到端验收完成后转 **Ready for review** 并合并。
 
 【未完成】
 - 公网 **Base Sepolia** 真实 **`funding/tx`**（链上充值回执）一轮冒烟与录屏。
 - **`/health` 的 `chainRpc` 脱敏**、Alchemy **密钥轮换**（运维 + 可选代码改动）。
 
 【代码证据】
-- 无当日仓库代码变更；验证手段为 **Railway Variables / Neon** 与本地 **`curl`**。
+- 提交：`cf65bc8`（已 push 到 `origin/feat/base-sepolia`）。
+- 关键文件：`frontend/components/payfi-demo.tsx`、`frontend/components/home/role-entry.tsx`、`frontend/components/merchant/merchant-console.tsx`、`frontend/components/intent/intent-detail.tsx`、`frontend/components/shared/intent-status-header.tsx`、`frontend/components/ui/language-switcher.tsx`、`frontend/lib/i18n.tsx`、`frontend/lib/wagmi-config.ts`、`src/routes/intents.ts`、`scripts/check-release.sh`、`WORKLOG.md`。
+- PR：<https://github.com/AlphaVeteran/payfidemo/pull/1>（Draft）。
 
 【明日第一任务建议（只能一个）】
 - 公网跑通 **链上 funding → `POST .../funding/tx`**（真实 **`txHash`**），或优先落地 **`/health` 不返回明文 RPC 密钥**并轮换 Alchemy Key 后重部署。

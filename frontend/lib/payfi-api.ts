@@ -131,6 +131,19 @@ export async function releaseSubmit(
   return data;
 }
 
+export async function refundIntent(
+  intentId: string,
+): Promise<{ ok: boolean; status?: string; txHash?: string; chain?: boolean }> {
+  const res = await fetch(`${apiRoot()}/intents/${encodeURIComponent(intentId)}/refund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || data.detail || "refund failed");
+  return data;
+}
+
 export type SettlementOutboxEvent = {
   id: string;
   kind: string;

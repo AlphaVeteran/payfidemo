@@ -30,6 +30,24 @@ const router = Router();
 
 let demoEscrowCounter = 1;
 
+/** viem `readContract(escrows)` 返回元组；统一转成可 JSON 落库的纯字段。 */
+function escrowSnapshotFromEscrowsRead(raw: unknown): {
+  releaseCount: number;
+  releasedTotal: string;
+  releaseNonce: number;
+} {
+  const t = raw as Record<number, unknown>;
+  const rc = t[6];
+  const rt = t[7];
+  const rn = t[10];
+  return {
+    releaseCount: Number(rc ?? 0),
+    releasedTotal:
+      typeof rt === "bigint" ? rt.toString() : String(rt ?? "0"),
+    releaseNonce: typeof rn === "bigint" ? Number(rn) : Number(rn ?? 0),
+  };
+}
+
 function anchorFromBody(b: CreateIntentBody) {
   return {
     agreementHash: b.agreementHash,
@@ -301,6 +319,35 @@ router.post("/:intentId/release/prepare", async (req, res) => {
     res.status(400).json({ error: "not funded" });
     return;
   }
+  if (isChainMode()) {
+    const escrowAddr = getAddress(process.env.ESCROW_ADDRESS!.trim());
+    const publicClient = getPublicClient();
+    const eid = BigInt(row.escrowId);
+    const raw = await publicClient.readContract({
+      address: escrowAddr,
+      abi: payFiEscrowAbi,
+      functionName: "escrows",
+      args: [eid],
+    });
+    const snap = escrowSnapshotFromEscrowsRead(raw);
+    const needsSave =
+      snap.releaseNonce !== row.releaseNonce ||
+      snap.releaseCount !== row.releaseCount ||
+      snap.releasedTotal !== row.releasedTotal;
+    if (needsSave) {
+      row.releaseNonce = snap.releaseNonce;
+      row.releaseCount = snap.releaseCount;
+      row.releasedTotal = snap.releasedTotal;
+      if (row.releasedTotal === row.amountTotal) {
+        row.status = "settled";
+      } else if (row.releaseCount > 0) {
+        row.status = "partially_settled";
+      } else {
+        row.status = "active";
+      }
+      await intentStore.saveIntent(row);
+    }
+  }
   const chainId = parseChainIdFromEnv();
   const verifying = process.env.ESCROW_ADDRESS?.trim()
     ? getAddress(process.env.ESCROW_ADDRESS.trim())
@@ -380,13 +427,14 @@ router.post("/:intentId/release/submit", async (req, res) => {
         functionName: "escrows",
         args: [eid],
       });
-      const onChainNonce = onChain[10];
+      const snap0 = escrowSnapshotFromEscrowsRead(onChain);
+      const onChainNonce = BigInt(snap0.releaseNonce);
       if (onChainNonce !== BigInt(row.releaseNonce)) {
         const localBefore = row.releaseNonce;
         // Self-heal local snapshot from chain when nonce drifts (e.g. another client already released).
-        row.releaseCount = Number(onChain[6]);
-        row.releasedTotal = onChain[7].toString();
-        row.releaseNonce = Number(onChainNonce);
+        row.releaseCount = snap0.releaseCount;
+        row.releasedTotal = snap0.releasedTotal;
+        row.releaseNonce = snap0.releaseNonce;
         if (row.releasedTotal === row.amountTotal) {
           row.status = "settled";
         } else if (row.releaseCount > 0) {
@@ -426,10 +474,12 @@ router.post("/:intentId/release/submit", async (req, res) => {
         abi: payFiEscrowAbi,
         functionName: "escrows",
         args: [eid],
+        ...(receipt.blockNumber != null ? { blockNumber: receipt.blockNumber } : {}),
       });
-      row.releaseCount = after[6];
-      row.releasedTotal = after[7].toString();
-      row.releaseNonce = Number(after[10]);
+      const snap = escrowSnapshotFromEscrowsRead(after);
+      row.releaseCount = snap.releaseCount;
+      row.releasedTotal = snap.releasedTotal;
+      row.releaseNonce = snap.releaseNonce;
       row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
       await intentStore.saveIntent(row);
 
