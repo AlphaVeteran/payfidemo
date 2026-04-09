@@ -14,12 +14,15 @@ function base64url(input: string | Buffer): string {
 
 export async function buildMerchantJWT(cartContents: object): Promise<string> {
   const merchantName = process.env.MERCHANT_NAME?.trim();
+  const pemInline = process.env.MERCHANT_PRIVATE_KEY_PEM?.trim();
   const pemPath = process.env.MERCHANT_PRIVATE_KEY_PATH?.trim();
   const jwtAudience = process.env.HASHKEY_JWT_AUD?.trim() || "hgatepay";
   if (!merchantName) throw new Error("MERCHANT_NAME is required");
-  if (!pemPath) throw new Error("MERCHANT_PRIVATE_KEY_PATH is required");
+  if (!pemInline && !pemPath) {
+    throw new Error("MERCHANT_PRIVATE_KEY_PEM or MERCHANT_PRIVATE_KEY_PATH is required");
+  }
 
-  const privateKeyPem = fs.readFileSync(pemPath, "utf8").trim();
+  const privateKeyPem = pemInline ? pemInline : fs.readFileSync(pemPath!, "utf8").trim();
   const privateKey = createPrivateKey(privateKeyPem);
 
   const cartHash = canonicalHash(cartContents);
