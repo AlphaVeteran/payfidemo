@@ -22,7 +22,9 @@ export async function buildMerchantJWT(cartContents: object): Promise<string> {
     throw new Error("MERCHANT_PRIVATE_KEY_PEM or MERCHANT_PRIVATE_KEY_PATH is required");
   }
 
-  const privateKeyPem = pemInline ? pemInline : fs.readFileSync(pemPath!, "utf8").trim();
+  const privateKeyPemRaw = pemInline ? pemInline : fs.readFileSync(pemPath!, "utf8").trim();
+  // Cloud env vars commonly store PEM with escaped newlines ("\n").
+  const privateKeyPem = privateKeyPemRaw.replace(/\\n/g, "\n");
   const privateKey = createPrivateKey(privateKeyPem);
 
   const cartHash = canonicalHash(cartContents);
