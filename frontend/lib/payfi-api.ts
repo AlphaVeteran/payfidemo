@@ -28,6 +28,8 @@ export type IntentRecord = {
     termsVersion: string;
     disputeResolver?: string;
   };
+  /** 创建 intent 时可选；GET 返回中可能包含（不含 webhookSecret） */
+  webhookUrl?: string;
 };
 
 export async function createIntent(body: Record<string, unknown>): Promise<{

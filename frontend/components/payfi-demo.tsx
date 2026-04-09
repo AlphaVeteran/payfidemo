@@ -232,6 +232,12 @@ export default function PayFiDemo() {
       refundTarget: "退回地址",
       refundAmount: "退回金额",
       refundDone: "已发起退款交易。",
+      webhookUrlLabel: "Webhook URL（可选）",
+      webhookUrlPlaceholder: "https://example.com/hooks/payfi 或本地隧道 HTTPS",
+      webhookSecretLabel: "Webhook Secret（可选，用于 X-PayFi-Signature）",
+      webhookSecretPlaceholder: "与商户服务端校验 HMAC 的密钥",
+      webhookHint:
+        "入金、释放、退款时服务端会向该 URL POST JSON；需公网 HTTPS 或隧道。超时与行为见 API 的 WEBHOOK_TIMEOUT_MS。",
     },
     "zh-TW": {
       userWorkbench: "使用者工作台",
@@ -307,6 +313,12 @@ export default function PayFiDemo() {
       refundTarget: "退回地址",
       refundAmount: "退回金額",
       refundDone: "已送出退款交易。",
+      webhookUrlLabel: "Webhook URL（選填）",
+      webhookUrlPlaceholder: "https://example.com/hooks/payfi 或本機隧道 HTTPS",
+      webhookSecretLabel: "Webhook Secret（選填，用於 X-PayFi-Signature）",
+      webhookSecretPlaceholder: "與商戶端驗證 HMAC 的金鑰",
+      webhookHint:
+        "入金、釋放、退款時服務端會向該 URL POST JSON；需公網 HTTPS 或隧道。逾時見 API 的 WEBHOOK_TIMEOUT_MS。",
     },
     en: {
       userWorkbench: "User Console",
@@ -382,6 +394,12 @@ export default function PayFiDemo() {
       refundTarget: "Return Address",
       refundAmount: "Return Amount",
       refundDone: "Refund transaction submitted.",
+      webhookUrlLabel: "Webhook URL (optional)",
+      webhookUrlPlaceholder: "https://example.com/hooks/payfi or tunnel HTTPS URL",
+      webhookSecretLabel: "Webhook Secret (optional, for X-PayFi-Signature)",
+      webhookSecretPlaceholder: "Shared secret for HMAC verification",
+      webhookHint:
+        "The API POSTs JSON on fund, release, and refund. Use a public HTTPS URL or a tunnel. See WEBHOOK_TIMEOUT_MS on the API.",
     },
   }[locale];
   const { address, isConnected, connector } = useAccount();
@@ -433,6 +451,8 @@ export default function PayFiDemo() {
   const [sepoliaAssetAddress, setSepoliaAssetAddress] = useState<string>(
     BASE_SEPOLIA_USDC_ADDRESS,
   );
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
 
   const payfiApiDisplay = useMemo(() => {
     const base =
@@ -570,6 +590,14 @@ export default function PayFiDemo() {
         const dm = process.env.NEXT_PUBLIC_DEMO_MERCHANT?.trim();
         if (dm) {
           body = { ...body, merchant: getAddress(dm as `0x${string}`) };
+        }
+      }
+      const wUrl = webhookUrl.trim();
+      if (wUrl) {
+        body = { ...body, webhookUrl: wUrl };
+        const wSec = webhookSecret.trim();
+        if (wSec) {
+          body = { ...body, webhookSecret: wSec };
         }
       }
       const { intentId: id } = await createIntent(body);
@@ -995,6 +1023,29 @@ export default function PayFiDemo() {
             </Field>
           </>
         )}
+        <p className="text-xs leading-relaxed text-zinc-500">{text.webhookHint}</p>
+        <Field label={text.webhookUrlLabel}>
+          <input
+            className="payfi-input font-mono text-xs"
+            type="url"
+            spellCheck={false}
+            autoComplete="off"
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            placeholder={text.webhookUrlPlaceholder}
+          />
+        </Field>
+        <Field label={text.webhookSecretLabel}>
+          <input
+            className="payfi-input font-mono text-xs"
+            type="password"
+            spellCheck={false}
+            autoComplete="off"
+            value={webhookSecret}
+            onChange={(e) => setWebhookSecret(e.target.value)}
+            placeholder={text.webhookSecretPlaceholder}
+          />
+        </Field>
         <button
           type="button"
           disabled={Boolean(busy)}

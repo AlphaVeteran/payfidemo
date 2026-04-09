@@ -6,7 +6,7 @@
 - 合约层：`contracts/PayFiEscrow.sol`，核心能力包括多 `escrowId`、`createAndDeposit`、EIP-712 双签 `releaseBySignatures`、到期 `refund`、可选 `disputeModule`。
 - API 层：`src/server.ts` + `src/routes/intents.ts`，提供支付意图 CRUD、funding 确认、release prepare/submit、refund、debug 接口。
 - 状态层：通过 **`intentStore`**（`src/store/intentStore.ts`）统一读写意图；未配置数据库时使用内存（`src/store/memory.js`），配置 **`DATABASE_URL`** 时使用 Postgres（`src/store/postgresIntent.ts` + 启动迁移）。状态覆盖 `awaiting_funding -> active -> partially_settled/settled/refunded`。
-- 集成层：`SettlementPort` / `MockSettlementAdapter` / `SettlementOutbox` 事件出站 + webhook stub（含幂等与重放考虑文档），支持链上模式与纯演示模式双轨运行。
+- 集成层：`SettlementPort` / `MockSettlementAdapter` / `SettlementOutbox` 事件出站 + **Webhook**：对 `webhookUrl` **真实 HTTP POST**（`X-PayFi-*` 头、HMAC、超时 **`WEBHOOK_TIMEOUT_MS`**，见 **`src/services/webhookStub.ts`**）；**`webhook_deliveries` 落库与重试队列**仍属后续项。
 
 ## 当前合约地址
 
@@ -29,8 +29,7 @@
 ## 待解决的问题
 
 - Railway API（`payfidemo-production`）：**`GET /health`**（**`persistence: postgres`**）、**创建 intent**、**Restart 后同一 `intentId` 仍可 `GET`** 已于 **2026-04-07** 验收记入本 WORKLOG；公网 **链上 funding（`approve` + `createAndDeposit` → `funding/tx`）** 仍可补做。
-- 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**webhook 投递记录**等仍缺可靠落库与重试闭环。
-- 完成 webhook 投递可靠性闭环：签名/HMAC、重试策略、幂等去重落库与可观测性。
+- 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**Webhook** 仍待 **投递记录表、自动重试、幂等落库、商户侧投递详情** 等进阶闭环（**2026-04-09** 已落地对外真实 POST、超时与本地/链上自测文档）。
 - 完成前端主路径（创建意图、充值提示、双签提交、状态展示、退款操作）并打通演示录屏。
 - 评估并按计划决定是否接入 `x402`（建议先保护 1-2 条只读 API，保留环境开关）。
 
@@ -43,6 +42,13 @@
 - 不在截止前扩大范围到多链/主网/完整第三方结算协议真联调，优先保证单链路稳定可演示。
 
 ## 当日记录（按日期倒序：最新在上）
+
+## 当日记录（2026-04-09）
+
+【今日完成】
+- **Webhook 最小可用**：`src/services/webhookStub.ts` 对 `webhookUrl` 发起真实 **`fetch` POST**（沿用 **`X-PayFi-Event-Id` / `X-PayFi-Timestamp` / `X-PayFi-Signature`**），**`AbortController`** 超时（**`WEBHOOK_TIMEOUT_MS`**，见 **`.env.example`**）；失败仅日志，不阻断主流程；**`src/routes/intents.ts`** 各投递点改为 **`await`**。
+- **Next 用户工作台**：`frontend/components/payfi-demo.tsx` 创建意向时可选填写 **Webhook URL / Secret**；`frontend/lib/payfi-api.ts` 的 **`IntentRecord`** 增加可选 **`webhookUrl`**（与 API `sanitize` 一致，不含 secret）。
+- **文档与自测脚本**：新增 **`docs/webhook-local-selftest.md`**（无链 demo 与 Base Sepolia 链上步骤、模块对照、与 **`/merchant` 商户端职责区分**）；**`README.md`** 增加文档链接；**`scripts/webhook-local-selftest.sh`**、**`scripts/webhook-base-sepolia-selftest.sh`** 支持一键本地验收。
 
 ## 当日记录（2026-04-08）
 

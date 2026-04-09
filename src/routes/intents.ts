@@ -243,7 +243,7 @@ router.post("/:intentId/funding/tx", async (req, res) => {
           txHash,
           ...row.anchor,
         });
-        dispatchWebhookDemo({
+        await dispatchWebhookDemo({
           webhookUrl: row.webhookUrl,
           webhookSecret: row.webhookSecret,
           type: "INTENT_FUNDED",
@@ -284,7 +284,7 @@ router.post("/:intentId/funding/tx", async (req, res) => {
       await intentStore.saveIntent(row);
       await settlementAdapter.emit("INTENT_FUNDED", fundedPayload);
     }
-    dispatchWebhookDemo({
+    await dispatchWebhookDemo({
       webhookUrl: row.webhookUrl,
       webhookSecret: row.webhookSecret,
       type: "INTENT_FUNDED",
@@ -491,7 +491,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
         txHash: hash,
         ...row.anchor,
       });
-      dispatchWebhookDemo({
+      await dispatchWebhookDemo({
         webhookUrl: row.webhookUrl,
         webhookSecret: row.webhookSecret,
         type: "SETTLEMENT_RELEASED",
@@ -539,7 +539,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
       await intentStore.saveIntent(row);
       await settlementAdapter.emit("SETTLEMENT_RELEASED", releasedPayload);
     }
-    dispatchWebhookDemo({
+    await dispatchWebhookDemo({
       webhookUrl: row.webhookUrl,
       webhookSecret: row.webhookSecret,
       type: "SETTLEMENT_RELEASED",
@@ -612,7 +612,7 @@ router.post("/:intentId/refund", async (req, res) => {
         txHash: hash,
         ...row.anchor,
       });
-      dispatchWebhookDemo({
+      await dispatchWebhookDemo({
         webhookUrl: row.webhookUrl,
         webhookSecret: row.webhookSecret,
         type: "INTENT_REFUNDED",
@@ -645,7 +645,7 @@ router.post("/:intentId/refund", async (req, res) => {
       await intentStore.saveIntent(row);
       await settlementAdapter.emit("INTENT_REFUNDED", refundedPayload);
     }
-    dispatchWebhookDemo({
+    await dispatchWebhookDemo({
       webhookUrl: row.webhookUrl,
       webhookSecret: row.webhookSecret,
       type: "INTENT_REFUNDED",
