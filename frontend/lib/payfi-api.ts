@@ -30,6 +30,8 @@ export type IntentRecord = {
     termsVersion: string;
     disputeResolver?: string;
   };
+  /** 创建 intent 时可选；GET 返回中可能包含（不含 webhookSecret） */
+  webhookUrl?: string;
 };
 
 export async function createIntent(body: Record<string, unknown>): Promise<{
@@ -143,6 +145,19 @@ export async function releaseSubmit(
   );
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || data.detail || "release submit failed");
+  return data;
+}
+
+export async function refundIntent(
+  intentId: string,
+): Promise<{ ok: boolean; status?: string; txHash?: string; chain?: boolean }> {
+  const res = await fetch(`${apiRoot()}/intents/${encodeURIComponent(intentId)}/refund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || data.detail || "refund failed");
   return data;
 }
 

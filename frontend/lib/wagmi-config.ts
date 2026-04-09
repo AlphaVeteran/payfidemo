@@ -1,4 +1,4 @@
-import { createConfig, http, injected } from "wagmi";
+import { createConfig, http } from "wagmi";
 import { baseSepolia } from "wagmi/chains";
 import { defineChain } from "viem";
 
@@ -51,9 +51,13 @@ if (enableBaseSepolia) {
   );
 }
 
+/**
+ * 不显式传 connectors：使用默认 multiInjectedProviderDiscovery（EIP-6963 / mipd），
+ * 每个已声明的钱包扩展只出现一条，避免与手写 injected({ target: "metaMask" }) 等重复。
+ * 极旧、不广播 EIP-6963 的扩展可能不会被列出；此时需升级浏览器钱包。
+ */
 export const wagmiConfig = createConfig({
   chains,
-  connectors: [injected()],
   transports,
   ssr: false,
 });

@@ -69,6 +69,39 @@ async function callApi(pathname, init) {
   return data;
 }
 
+/** USDC 等代币在非零 allowance 上改小额度时常需先 approve(spender, 0)。 */
+async function ensureErc20Allowance(userWallet, publicClient, token, spender, owner, need) {
+  const allowance = await publicClient.readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: [owner, spender],
+  });
+  const hashes = [];
+  if (allowance >= need) {
+    return hashes;
+  }
+  if (allowance > 0n) {
+    const h0 = await userWallet.writeContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [spender, 0n],
+    });
+    await publicClient.waitForTransactionReceipt({ hash: h0 });
+    hashes.push(h0);
+  }
+  const h1 = await userWallet.writeContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: "approve",
+    args: [spender, need],
+  });
+  await publicClient.waitForTransactionReceipt({ hash: h1 });
+  hashes.push(h1);
+  return hashes;
+}
+
 async function performOneRelease(intentId, user, merchant) {
   const intent = await callApi(`/intents/${encodeURIComponent(intentId)}`);
   if (intent.status === "settled" || intent.status === "refunded") {
@@ -176,13 +209,14 @@ async function main() {
       await publicClient.waitForTransactionReceipt({ hash: tx });
     }
 
-    const approveHash = await userWallet.writeContract({
-      address: intent.asset,
-      abi: erc20Abi,
-      functionName: "approve",
-      args: [hint.to, need],
-    });
-    await publicClient.waitForTransactionReceipt({ hash: approveHash });
+    const approveHashes = await ensureErc20Allowance(
+      userWallet,
+      publicClient,
+      intent.asset,
+      hint.to,
+      user.address,
+      need,
+    );
 
     const fundHash = await userWallet.writeContract({
       address: hint.to,
@@ -206,7 +240,7 @@ async function main() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ txHash: fundHash }),
     });
-    console.log(JSON.stringify({ approveHash, fundHash, posted }, null, 2));
+    console.log(JSON.stringify({ approveHashes, fundHash, posted }, null, 2));
     return;
   }
 
@@ -264,13 +298,14 @@ async function main() {
     const id = created.intentId;
     const hint = await callApi(`/intents/${encodeURIComponent(id)}/funding/hint`);
     const need = BigInt(body.amountTotal);
-    const approveHash = await userWallet.writeContract({
-      address: asset,
-      abi: erc20Abi,
-      functionName: "approve",
-      args: [hint.to, need],
-    });
-    await publicClient.waitForTransactionReceipt({ hash: approveHash });
+    const approveHashes = await ensureErc20Allowance(
+      userWallet,
+      publicClient,
+      asset,
+      hint.to,
+      user.address,
+      need,
+    );
     const fundHash = await userWallet.writeContract({
       address: hint.to,
       abi: escrowAbi,
@@ -303,7 +338,7 @@ async function main() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userSig, merchantSig }),
     });
-    console.log(JSON.stringify({ intentId: id, approveHash, fundHash, submit }, null, 2));
+    console.log(JSON.stringify({ intentId: id, approveHashes, fundHash, submit }, null, 2));
     return;
   }
 

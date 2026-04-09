@@ -6,14 +6,16 @@
 - 合约层：`contracts/PayFiEscrow.sol`，核心能力包括多 `escrowId`、`createAndDeposit`、EIP-712 双签 `releaseBySignatures`、到期 `refund`、可选 `disputeModule`。
 - API 层：`src/server.ts` + `src/routes/intents.ts`，提供支付意图 CRUD、funding 确认、release prepare/submit、refund、debug 接口。
 - 状态层：通过 **`intentStore`**（`src/store/intentStore.ts`）统一读写意图；未配置数据库时使用内存（`src/store/memory.js`），配置 **`DATABASE_URL`** 时使用 Postgres（`src/store/postgresIntent.ts` + 启动迁移）。状态覆盖 `awaiting_funding -> active -> partially_settled/settled/refunded`。
-- 集成层：`SettlementPort` / `MockSettlementAdapter` / `SettlementOutbox` 事件出站 + webhook stub（含幂等与重放考虑文档），支持链上模式与纯演示模式双轨运行。
+- 集成层：`SettlementPort` / `MockSettlementAdapter` / `SettlementOutbox` 事件出站 + **Webhook**：对 `webhookUrl` **真实 HTTP POST**（`X-PayFi-*` 头、HMAC、超时 **`WEBHOOK_TIMEOUT_MS`**，见 **`src/services/webhookStub.ts`**）；**`webhook_deliveries` 落库与重试队列**仍属后续项。
 
 ## 当前合约地址
 
 - 环境：Anvil 本地链（`chainId=31337`）。
 - `PayFiEscrow`：`0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512`（来源：`.env` + `broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
 - `MockERC20 (mUSDC)`：`0x5FbDB2315678afecb367f032d93F642f64180aa3`（来源：`broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
-- 备注：Base Sepolia 地址目前未在仓库文档中落地，后续部署后需同步更新此节与 `README.md`。
+- **Base Sepolia** 演示资产：**Circle 测试 USDC** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`（6 decimals）；前端在 `chainId=84532` 时默认使用该地址（见 `frontend/lib/token-addresses.ts`）。
+- **Base Sepolia** `PayFiEscrow`：`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`（[Basescan Sepolia](https://sepolia.basescan.org/address/0x3FCE185FFF78dDB1120C606A0611e168646a0CeA)）；与根目录 **`.env.example`** 中 **`ESCROW_ADDRESS`** 一致（团队演示用；生产请自部署并改 Variables）。
+- 备注：本地 Anvil 与 Base Sepolia 的 **`ESCROW_ADDRESS` / `asset`** 须在各自 **`.env`** 与 Railway Variables 中与链上实例一致，否则 EIP-712 与 **`funding/tx`** 校验会失败。
 
 ## 已解决的问题
 
@@ -22,12 +24,12 @@
 - API 已支持链上模式：`funding/tx` 可从交易回执解析 `EscrowCreated` 并校验 `user/merchant/asset/amount/agreementHash` 一致性。
 - API 已支持链上真实交易提交流程：`release/submit` 与 `refund` 在配置 RPC/私钥后可由提交账户发交易并回写本地状态。
 - 已提供本地完整联调脚本与步骤：anvil 启动、bootstrap 部署、签名脚本、curl 测试、debug 接口。
+- **Base Sepolia** 演示用 **`PayFiEscrow`**（`0x3FCE185…`）已部署，地址写入 **`.env.example`**，并同步 **`README.md`**、**`docs/railway-base-sepolia-deploy.md`** 与「当前合约地址」+ Basescan 链接。
 
 ## 待解决的问题
 
-- 补充并固定 Base Sepolia 实际部署地址（含区块浏览器链接），同步到 `README.md` 和提交材料。
-- 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**webhook 投递记录**等仍缺可靠落库与重试闭环。
-- 完成 webhook 投递可靠性闭环：签名/HMAC、重试策略、幂等去重落库与可观测性。
+- Railway API（`payfidemo-production`）：**`GET /health`**（**`persistence: postgres`**）、**创建 intent**、**Restart 后同一 `intentId` 仍可 `GET`** 已于 **2026-04-07** 验收记入本 WORKLOG；公网 **链上 funding（`approve` + `createAndDeposit` → `funding/tx`）** 仍可补做。
+- 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**Webhook** 仍待 **投递记录表、自动重试、幂等落库、商户侧投递详情** 等进阶闭环（**2026-04-09** 已落地对外真实 POST、超时与本地/链上自测文档）。
 - 完成前端主路径（创建意图、充值提示、双签提交、状态展示、退款操作）并打通演示录屏。
 - 评估并按计划决定是否接入 `x402`（建议先保护 1-2 条只读 API，保留环境开关）。
 
@@ -40,6 +42,102 @@
 - 不在截止前扩大范围到多链/主网/完整第三方结算协议真联调，优先保证单链路稳定可演示。
 
 ## 当日记录（按日期倒序：最新在上）
+
+## 当日记录（2026-04-09）
+
+【今日完成】
+- **Webhook 最小可用**：`src/services/webhookStub.ts` 对 `webhookUrl` 发起真实 **`fetch` POST**（沿用 **`X-PayFi-Event-Id` / `X-PayFi-Timestamp` / `X-PayFi-Signature`**），**`AbortController`** 超时（**`WEBHOOK_TIMEOUT_MS`**，见 **`.env.example`**）；失败仅日志，不阻断主流程；**`src/routes/intents.ts`** 各投递点改为 **`await`**。
+- **Next 用户工作台**：`frontend/components/payfi-demo.tsx` 创建意向时可选填写 **Webhook URL / Secret**；`frontend/lib/payfi-api.ts` 的 **`IntentRecord`** 增加可选 **`webhookUrl`**（与 API `sanitize` 一致，不含 secret）。
+- **文档与自测脚本**：新增 **`docs/webhook-local-selftest.md`**（无链 demo 与 Base Sepolia 链上步骤、模块对照、与 **`/merchant` 商户端职责区分**）；**`README.md`** 增加文档链接；**`scripts/webhook-local-selftest.sh`**、**`scripts/webhook-base-sepolia-selftest.sh`** 支持一键本地验收。
+
+## 当日记录（2026-04-08）
+
+【今日完成】
+- **前端信息架构与导航**：`/user`、`/merchant`、`/intent/[intentId]` 顶部导航由纯链接升级为卡片入口，补齐中英文本（home/switch 描述、统一 CTA），减少角色切换与返回首页时的跳转认知成本。
+- **商户/用户主流程补强**：`frontend/components/payfi-demo.tsx` 增加退款相关可视化与操作反馈（含剩余额度、到期状态、执行反馈）；`frontend/components/merchant/merchant-console.tsx` 与 `intent-detail.tsx` 对齐新导航与说明文案。
+- **前端 API 能力扩展**：`frontend/lib/payfi-api.ts` 新增 `refundIntent(intentId)`，统一前端发起退款提交接口，便于页面复用。
+- **后端链上状态一致性增强**：`src/routes/intents.ts` 新增 `escrowSnapshotFromEscrowsRead`，统一解析 `escrows` 读结果；`release/prepare` 与 `release/submit` 增加链上快照自愈/回写，降低多端并发下本地 nonce 与链上状态漂移。
+- **脚本稳定性改进**：`scripts/local-flow.mjs` 增加 `ensureErc20Allowance`（先清零再授权），兼容 USDC 等代币在非零 allowance 变更场景，避免联调时授权失败。
+
+【未完成】
+- 仍需在 Base Sepolia 公网环境完成一轮真实资金路径（funding/release/refund）冒烟并沉淀截图或录屏证据。
+
+【代码证据】
+- `frontend/app/user/page.tsx`
+- `frontend/components/intent/intent-detail.tsx`
+- `frontend/components/merchant/merchant-console.tsx`
+- `frontend/components/payfi-demo.tsx`
+- `frontend/lib/payfi-api.ts`
+- `src/routes/intents.ts`
+- `scripts/local-flow.mjs`
+- `WORKLOG.md`
+
+【明日第一任务建议（只能一个）】
+- 在 Base Sepolia 公网跑通一条完整示例（create -> funding/tx -> release -> refund），并把关键 `intentId/txHash/状态流转` 记录到下一条 WORKLOG。
+
+## 当日记录（2026-04-07）
+
+【今日完成】
+- **Railway API**（公网根域 **`payfidemo-production.up.railway.app`**）：**`GET /health`** 确认 **`ok: true`**、**`chainId`/`walletChainId`: 84532**、**`escrowConfigured: true`**、**`persistence: postgres`**（Neon **`DATABASE_URL`** 在 API Service 生效）；**Deploy Logs** 可见 **`[payfidemo] Postgres persistence enabled (DATABASE_URL)`** 与进程监听 Railway 注入的 **`PORT`**（日志文案仍写 `127.0.0.1`，属控制台提示）。
+- **排错与现象**：**`Application failed to respond` / 502**、HTTP 耗时约 **15s** 与 **Neon compute idle**、启动阶段 **`await runMigrations` 完成后才 `listen`** 叠加时的关系；**Deploy Logs** vs **HTTP Logs** 分工；**`GET .../intents/null`** 来自 **POST 失败或非 JSON 时 `jq -r .intentId` 为 `null`**。
+- **CDN**：**`/health`** 使用 **`?ts=$(date +%s)`** 等 query 避免 **Fastly** 边缘对 JSON 的缓存导致误判（曾出现 **`persistence: memory`** 旧响应与线上真实状态不一致）。
+- **持久化验收**：**Restart/Redeploy** API 后 **`GET /api/payfi/v1/intents/{intentId}`** 仍返回完整 intent；示例记录 **`intentId=307de31b-99a4-45a7-99d9-b173afebcf8d`**，**`createdAt=2026-04-07T04:21:34.908Z`**，**`status=awaiting_funding`**。
+- **安全备忘**：**`/health` 字段 `chainRpc`** 含完整 **RPC URL（含 Alchemy key）**，公网可读；已提醒 **轮换密钥** 与后续在代码侧 **脱敏**（当日未改仓库）。
+- **代码提交与推送**：提交 **`cf65bc8`**（`feat(i18n): add bilingual UI support and update base sepolia flow`）并已推送至 **`origin/feat/base-sepolia`**；主要包含前端中英双语切换、Base Sepolia 相关演示流与文案对齐、`scripts/check-release.sh` 与 `WORKLOG` 更新。
+- **PR**：已创建 **Draft PR #1**（`feat/base-sepolia` -> `main`）：<https://github.com/AlphaVeteran/payfidemo/pull/1>；后续待 Base Sepolia 端到端验收完成后转 **Ready for review** 并合并。
+
+【未完成】
+- 公网 **Base Sepolia** 真实 **`funding/tx`**（链上充值回执）一轮冒烟与录屏。
+- **`/health` 的 `chainRpc` 脱敏**、Alchemy **密钥轮换**（运维 + 可选代码改动）。
+
+【代码证据】
+- 提交：`cf65bc8`（已 push 到 `origin/feat/base-sepolia`）。
+- 关键文件：`frontend/components/payfi-demo.tsx`、`frontend/components/home/role-entry.tsx`、`frontend/components/merchant/merchant-console.tsx`、`frontend/components/intent/intent-detail.tsx`、`frontend/components/shared/intent-status-header.tsx`、`frontend/components/ui/language-switcher.tsx`、`frontend/lib/i18n.tsx`、`frontend/lib/wagmi-config.ts`、`src/routes/intents.ts`、`scripts/check-release.sh`、`WORKLOG.md`。
+- PR：<https://github.com/AlphaVeteran/payfidemo/pull/1>（Draft）。
+
+【明日第一任务建议（只能一个）】
+- 公网跑通 **链上 funding → `POST .../funding/tx`**（真实 **`txHash`**），或优先落地 **`/health` 不返回明文 RPC 密钥**并轮换 Alchemy Key 后重部署。
+
+## 当日记录（2026-04-05）
+
+【今日完成】
+- **分支**：继续在 **`feat/base-sepolia`** 上对齐 Base Sepolia 演示资产与前端创建意图体验。
+- **前端**：新增 **`frontend/lib/token-addresses.ts`**（Anvil MockERC20 与 Circle Base Sepolia USDC 常量及 **`defaultDemoAssetAddress`**）；**`payfi-demo.tsx`** 在 **`chainId=84532`** 下使用 **`parseUnits`** 将用户输入的 **USDC 十进制总额** 转为 **`amountTotal` / `amountPerLesson`**（按「最大释放次数」整除校验），**`user`** 取已连接钱包地址，**`merchant`** 可选 **`NEXT_PUBLIC_DEMO_MERCHANT`**；Anvil 路径仍用静态默认 **`amountTotal`** 与链上默认 **`asset`**。
+- **文档与示例**：**`README.md`** 区分 Anvil 与 Base Sepolia 的 **`asset`** 与最小单位说明；**`docs/railway-base-sepolia-deploy.md`** 写明 Circle 测试 USDC 地址与 6 decimals；**`WORKLOG`**「当前合约地址」补充 Base Sepolia USDC 并区分资产与 Escrow 部署备注。
+- **`.env.example`**：可选 **`BASE_URL`**（仅便于 `source` 后冒烟 `curl`，服务端不读）、**`DATABASE_URL`** 占位与 Neon URL 含 **`&`** 时的引号提示、Base Sepolia **`asset`** 注释与 Circle 文档链接。
+- **部署脚本**：**`script/DeployPayFiEscrow.s.sol`** 增加 **`privateKeyFromEnv`**，兼容 **`PRIVATE_KEY`** 为 **`0x` 前缀或 64 位十六进制**（与仓库其它 env 风格一致）。
+- **本地调试页**：**`web/index.html`** 默认 **Asset** 改为 Base Sepolia Circle USDC 地址（与线上演示资产一致）。
+- **Base Sepolia 链上**：已用 **`script/DeployPayFiEscrow.s.sol`** 部署 **`PayFiEscrow`**，地址 **`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`** 已写入 **`.env.example`** 的 **`ESCROW_ADDRESS`**，并同步 **`WORKLOG`**（当前合约地址）、**`README.md`**、**`docs/railway-base-sepolia-deploy.md`** 与 Basescan 链接。
+
+【未完成】
+- Base Sepolia 端到端（领测试 USDC、approve、**`createAndDeposit`**、双签 release）的联调验证与录屏可按需补记；Railway Variables 与公网双服务冒烟仍待按部署文档执行。
+
+【代码证据】
+- `frontend/lib/token-addresses.ts`、`frontend/components/payfi-demo.tsx`
+- `.env.example`、`README.md`、`WORKLOG.md`、`docs/railway-base-sepolia-deploy.md`
+- `script/DeployPayFiEscrow.s.sol`、`web/index.html`
+
+【明日第一任务建议（只能一个）】
+- 将 **`ESCROW_ADDRESS`**（`0x3FCE185…` 或自有部署）、**`CHAIN_ID`**、**`CHAIN_RPC_URL`**、**`asset`**（USDC）写入 **Railway** API Variables，按 **`docs/railway-base-sepolia-deploy.md`** 完成 **`GET /health`**（**`persistence: postgres`**）与 **创建 intent → funding** 的公网冒烟。
+
+## 当日记录（2026-04-04）
+
+【今日完成】
+- **分支**：在 **`feat/base-sepolia`** 上推进 Base Sepolia 部署准备（相对 **`origin/main`** 跟踪；本地 `.env` 仅本机，不提交）。
+- **`.gitignore`**：忽略 **`.env.hashkey.testnet`**、**`.env.local.anvil`**；新增 **`keys/`**，避免商户/网关 PEM 等密钥误入库。
+- **Railway（Config as Code）**：根目录 **`railway.toml`** — `RAILPACK`、`watchPatterns`（`src/` / `web/` 等）、**`startCommand`**：`node dist/server.js`、**`healthcheckPath`**：`/health`；**`frontend/railway.toml`** — Next 生产启动 **`npx next start -H 0.0.0.0`**、`/` 健康检查、前端目录 **watchPatterns**；注释说明 monorepo 下 **Root Directory** 与 **`NEXT_PUBLIC_PAYFI_API_URL`**。
+- **文档**：新增 **`docs/railway-base-sepolia-deploy.md`**（Base Sepolia 合约部署、Neon、`NEXT_PUBLIC_*` 与 `payfi-api` 根 URL 约定、双 Service 顺序、测试与排错）；**`README.md`** 文档索引增加该链接。
+- **`.env.example`**：在 **`DATABASE_URL`** 说明处增加可与多分支共用 Neon 的示例控制台链接（无密钥）。
+
+【未完成】
+- Base Sepolia 上 **Escrow 实际地址** 与区块浏览器链接仍待部署后写入 **`WORKLOG` / `README`**。
+- Railway / Neon 线上 Variables 与首次公网联调验证待执行（见部署文档）。
+
+【代码证据】
+- `railway.toml`、`frontend/railway.toml`、`.gitignore`、`.env.example`、`README.md`、`docs/railway-base-sepolia-deploy.md`
+
+【明日第一任务建议（只能一个）】
+- 在 Base Sepolia **部署 PayFiEscrow**，将 **`ESCROW_ADDRESS`** 与 **`asset`** 写入 Railway API Variables，按 **`docs/railway-base-sepolia-deploy.md`** 完成 API + 前端双服务首次部署并 **`GET /health`** 确认 **`persistence: postgres`**。
 
 ## 当日记录（2026-04-03）
 
