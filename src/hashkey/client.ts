@@ -17,6 +17,15 @@ function cartExpiryIsoSeconds(): string {
   return new Date(Date.now() + 365 * 86400 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
+function toUsdDisplayFromSixDecimals(amountInSmallest: string): string {
+  const raw = BigInt(amountInSmallest);
+  const whole = raw / 1_000_000n;
+  const frac = raw % 1_000_000n;
+  if (frac === 0n) return whole.toString();
+  const fracTrimmed = frac.toString().padStart(6, "0").replace(/0+$/, "");
+  return `${whole.toString()}.${fracTrimmed}`;
+}
+
 export function buildCartContents(intent: {
   intentId: string;
   merchant: string;
@@ -32,7 +41,10 @@ export function buildCartContents(intent: {
     throw new Error("CHAIN_NETWORK, CHAIN_ID, USDC_CONTRACT, ESCROW_ADDRESS, MERCHANT_NAME are required");
   }
 
-  const amountUsd = (Number(intent.amountTotal) / 1e6).toFixed(2);
+  const amountUsd = toUsdDisplayFromSixDecimals(intent.amountTotal);
+  const now = Math.floor(Date.now() / 1000);
+  const validAfter = now.toString();
+  const validBefore = (now + 3600).toString();
   const paymentRequestId = `PAY-REQ-${intent.intentId}`;
   return {
     id: intent.intentId,
@@ -48,6 +60,9 @@ export function buildCartContents(intent: {
             contract_address: getAddress(usdc as `0x${string}`),
             pay_to: getAddress(escrow as `0x${string}`),
             coin: "USDC",
+            schema: "eip3009",
+            valid_after: validAfter,
+            valid_before: validBefore,
           },
         },
       ],
@@ -84,7 +99,9 @@ export async function createReusableOrder(input: {
 
   const contents = buildCartContents(input);
   const jwt = await buildMerchantJWT(contents);
+  const merchantId = process.env.HASHKEY_MERCHANT_ID?.trim() || appKey;
   const requestBody: Record<string, unknown> = {
+    merchant_id: merchantId,
     cart_mandate: {
       contents,
       merchant_authorization: jwt,

@@ -15,6 +15,7 @@ function base64url(input: string | Buffer): string {
 export async function buildMerchantJWT(cartContents: object): Promise<string> {
   const merchantName = process.env.MERCHANT_NAME?.trim();
   const pemPath = process.env.MERCHANT_PRIVATE_KEY_PATH?.trim();
+  const jwtAudience = process.env.HASHKEY_JWT_AUD?.trim() || "hgatepay";
   if (!merchantName) throw new Error("MERCHANT_NAME is required");
   if (!pemPath) throw new Error("MERCHANT_PRIVATE_KEY_PATH is required");
 
@@ -26,7 +27,7 @@ export async function buildMerchantJWT(cartContents: object): Promise<string> {
   const payload = {
     iss: merchantName,
     sub: merchantName,
-    aud: "HashkeyMerchant",
+    aud: jwtAudience,
     iat: now,
     exp: now + 3600,
     jti: `JWT-${now}-${crypto.randomUUID()}`,
