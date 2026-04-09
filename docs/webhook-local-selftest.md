@@ -1,6 +1,6 @@
 # Webhook 本地自测说明（无链 demo / Base Sepolia 链上）
 
-本文整理两种本地验证方式：**无链（demo 入金）**与 **Base Sepolia 链上入金**，均验证服务端对 `webhookUrl` 发起真实 **HTTP POST**（头 **`X-PayFi-Event-Id`**、**`X-PayFi-Timestamp`**、**`X-PayFi-Signature`**，body 为 JSON）。实现见 **`src/services/webhookStub.ts`**；超时见 **`.env.example`** 中的 **`WEBHOOK_TIMEOUT_MS`**。
+本文整理两种本地验证方式：**无链（demo 入金）**与 **Base Sepolia 链上入金**，均验证服务端对 `webhookUrl` 发起真实 **HTTP POST**（头 **`X-PayFi-Event-Id`**、**`X-PayFi-Timestamp`**、**`X-PayFi-Signature`**，body 为 JSON）。实现见 **`src/services/webhookStub.ts`**；超时见 **`.env.example`** 中的 **`WEBHOOK_TIMEOUT_MS`**。**HMAC 计算方式、重试与幂等落库**见下文 **「背景：HMAC 验签、重试与幂等落库」**。
 
 ---
 
@@ -24,6 +24,46 @@
 | **是否互斥** | 否。真实场景可**同时**使用：员工用控制台看状态，系统在 **`webhookUrl`** 接事件。当前商户端**不包含** webhook 配置与投递详情的 UI。 |
 
 简言之：**假商户 = 模拟「商户 ERP 的 hook 端点」**；**商户端 = PayFi 提供的演示控制台**。二者互补，不是「二选一的两种商户实现」。
+
+---
+
+## 背景：HMAC 验签、重试与幂等落库（小白向）
+
+自测时只需看到请求头与 body；若你要**仿生产商户**写接收端，需要理解下面三点。实现以 **`src/services/webhookStub.ts`** 为准。
+
+### HMAC 是什么、本仓库怎么算
+
+**HMAC**（常写作 HMAC-SHA256）用商户与平台**共享的密钥** `webhookSecret` 对「时间戳 + 原始 body 字符串」做认证码，放在 **`X-PayFi-Signature`**。作用是：**body 未被篡改**，且**知道密钥的一方**才能生成合法签名（不是加密，body 仍是明文 JSON）。
+
+| 项目 | 说明 |
+|------|------|
+| **何时有真签名** | 创建 intent 时传了 **`webhookSecret`** |
+| **无 secret** | 头 **`X-PayFi-Signature`** 为固定字面量 **`demo-no-secret`**，仅便于本地打印，**不能**当生产验签 |
+| **参与签名的字符串** | **`${timestamp}.${payload}`** —— **`timestamp`** 与头 **`X-PayFi-Timestamp`**（秒级 Unix 时间戳）一致；**`payload`** 必须与 HTTP body **逐字节相同**（即实际 POST 的那段 JSON 字符串） |
+| **算法** | **HMAC-SHA256**，摘要以 **hex** 小写放入 **`X-PayFi-Signature`** |
+
+商户验签步骤（概念）：用同一 `webhookSecret`、同一 `timestamp`、收到的 body 原文重算 HMAC，与 **`X-PayFi-Signature`** 做**常时比较**（避免计时攻击）。可选：校验时间戳与当前时间差在容忍窗口内，防重放。
+
+### 重试（retry）
+
+**含义**：请求失败（超时、5xx、网络错误）时**隔一段时间再 POST**，提高送达率；需配合**最大次数**、**指数退避**，避免打爆对方。
+
+| 项目 | 本仓库 demo 行为 |
+|------|-------------------|
+| **`dispatchWebhookDemo`** | **单次** `fetch`；失败只 **`console.warn`**，**不会自动重试** |
+| **超时** | 由 **`WEBHOOK_TIMEOUT_MS`** 控制（见 **`.env.example`**） |
+
+生产侧若在平台内做「失败重试队列」，同一逻辑事件可能**投递多次**；商户端必须按下一小节做**幂等**，否则重复处理会重复记账。
+
+### 幂等落库
+
+**含义**：同一个业务事件（同一个 **`X-PayFi-Event-Id`**）即使因重试到达多次，数据库里也只应产生**一份**业务结果，不重复插入、不重复发货。
+
+| 项目 | 说明 |
+|------|------|
+| **幂等键** | 头 **`X-PayFi-Event-Id`**（与 body 内 **`eventId`** 一致；本 demo 为每次投递生成的 **UUID**） |
+| **常见做法** | 以 **`event_id`** 做唯一约束或先查后写：已处理则直接返回 **2xx**，不再执行业务副作用 |
+| **与 HMAC 的关系** | 验签保证「内容与来源可信」；幂等保证「重复投递不重复落库」，二者互补 |
 
 ---
 
