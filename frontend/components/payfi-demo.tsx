@@ -11,6 +11,7 @@ import {
   useSwitchChain,
   useWriteContract,
 } from "wagmi";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   erc20Abi,
@@ -36,12 +37,13 @@ import {
 } from "@/lib/payfi-api";
 import { domainFromApi, releaseMessageFromApi } from "@/lib/release-typed-data";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
-import { baseSepolia } from "wagmi/chains";
+import { blockExplorerTxUrl } from "@/lib/explorer";
 import {
-  BASE_SEPOLIA_USDC_ADDRESS,
-  BASE_SEPOLIA_USDC_DECIMALS,
-  defaultDemoAssetAddress,
-} from "@/lib/token-addresses";
+  chainDisplayName,
+  HASHKEY_TESTNET_CHAIN_ID,
+  isPublicUsdcTestnet,
+} from "@/lib/demo-network";
+import { defaultDemoAssetAddress, demoUsdcDecimals } from "@/lib/token-addresses";
 
 /** Anvil + Rabby：RPC/链不一致或重启链后，旧 tx 会表现为长时间等不到回执。 */
 async function waitTxReceipt(client: PublicClient, hash: `0x${string}`) {
@@ -62,9 +64,10 @@ async function waitTxReceipt(client: PublicClient, hash: `0x${string}`) {
   }
 }
 
-function sepoliaUsdcToIntentAmounts(
+function publicTestnetUsdcToIntentAmounts(
   usdcDecimalStr: string,
   maxReleases: number,
+  decimals: number,
 ): { amountTotal: string; amountPerLesson: string } {
   if (!Number.isInteger(maxReleases) || maxReleases < 1) {
     throw new Error("最大释放次数须为 ≥1 的整数。");
@@ -75,7 +78,7 @@ function sepoliaUsdcToIntentAmounts(
   }
   let total: bigint;
   try {
-    total = parseUnits(trimmed, BASE_SEPOLIA_USDC_DECIMALS);
+    total = parseUnits(trimmed, decimals);
   } catch {
     throw new Error("USDC 金额格式无效（示例：1000 或 0.5）。");
   }
@@ -180,7 +183,7 @@ export default function PayFiDemo() {
         "当前没有检测到钱包。请确认已安装 MetaMask / Rabby 等扩展；部分环境需用桌面 Chrome 且页面由 HTTPS 或 localhost 打开，扩展才会注入。",
       switchTo: "切换到",
       wrongChainNeed: "需",
-      baseSepoliaConnectFirst: "Base Sepolia 请先连接钱包（将作为合同意向用户）。",
+      publicTestnetConnectFirst: "请在 {chain} 先连接钱包（将作为合同意向用户）。",
       releaseCountInvalid: "释放次数须为 ≥1 的整数。",
       noPublicClient: "缺少 public client",
       approveReverted: "授权交易回滚",
@@ -197,9 +200,11 @@ export default function PayFiDemo() {
       needBothSigs: "需要用户和商家双方签名。",
       nonceDesyncHint:
         "检测到 releaseNonce 不一致：链上状态已变化。已清空旧签名，请点击“刷新合同意向”后重新执行 用户签名 -> 商家签名 -> 提交释放。",
-      sepoliaHint:
+      hashkeyCreateHint:
+        "使用 HashKey Chain 测试网上的测试 USDC（{decimals} decimals）。托管总额将均分为「释放次数」笔；「托管周期」对应链上 escrow 到期前可释放/退款的时间窗（秒级精度由小时换算）。商家地址可通过 NEXT_PUBLIC_DEMO_MERCHANT 配置；未配置时仍为 Anvil 演示商家地址（双签需对应私钥）。",
+      baseSepoliaCreateHint:
         "默认使用 Circle Base Sepolia 测试 USDC（{decimals} decimals）。托管总额将均分为「释放次数」笔；「托管周期」对应链上 escrow 到期前可释放/退款的时间窗（秒级精度由小时换算）。商家地址可通过 NEXT_PUBLIC_DEMO_MERCHANT 配置；未配置时仍为 Anvil 演示商家地址（双签需对应私钥）。",
-      usdcAddressLabel: "USDC 合约地址（Circle 测试网默认已填，可改）",
+      usdcAddressLabel: "USDC 合约地址（测试网）",
       totalEscrowLabel: "托管总额（USDC）",
       totalEscrowPlaceholder: "例如 10 或 100",
       releaseCountLabel: "释放次数（均分总额，须整除）",
@@ -238,6 +243,21 @@ export default function PayFiDemo() {
       webhookSecretPlaceholder: "与商户服务端校验 HMAC 的密钥",
       webhookHint:
         "入金、释放、退款时服务端会向该 URL POST JSON；需公网 HTTPS 或隧道。超时与行为见 API 的 WEBHOOK_TIMEOUT_MS。",
+      networkBannerLine: "PayFi · {chain} · Chain ID {id}",
+      hspManualLink: "HSP 用户手册（HashFans）",
+      stepCreate: "创建意向",
+      stepFund: "链上入金",
+      stepRelease: "双签释放",
+      stepRefund: "退款",
+      wizardAdvanced: "高级选项（Webhook）",
+      gatewayOptionalTitle: "可选：HashKey Gateway 收银台（加分演示）",
+      gatewayOpen: "打开收银台",
+      merchantNextStep: "下一步：前往商户控制台完成商家签",
+      explorerViewTx: "在区块浏览器查看交易",
+      stepWrongContext: "当前步骤与合同状态不一致，已为你切换到合适步骤。",
+      stepNeedIntentFirst: "请先创建或加载合同意向（intentId）。",
+      stepNotFundedYet: "请先完成「链上入金」后再进行双签释放。",
+      stepAlreadyFunded: "当前合同已不在「待支付」状态。若托管尚未完成，请查看上一步；否则请在本步继续释放或退款。",
     },
     "zh-TW": {
       userWorkbench: "使用者工作台",
@@ -261,7 +281,7 @@ export default function PayFiDemo() {
         "目前未檢測到錢包。請確認已安裝 MetaMask / Rabby 等擴充；部分環境需使用桌面 Chrome，且頁面由 HTTPS 或 localhost 開啟，擴充才會注入。",
       switchTo: "切換到",
       wrongChainNeed: "需",
-      baseSepoliaConnectFirst: "Base Sepolia 請先連接錢包（將作為合同意向使用者）。",
+      publicTestnetConnectFirst: "請在 {chain} 先連接錢包（將作為合同意向使用者）。",
       releaseCountInvalid: "釋放次數須為 ≥1 的整數。",
       noPublicClient: "缺少 public client",
       approveReverted: "授權交易回滾",
@@ -278,9 +298,11 @@ export default function PayFiDemo() {
       needBothSigs: "需要使用者與商家雙方簽名。",
       nonceDesyncHint:
         "偵測到 releaseNonce 不一致：鏈上狀態已變化。已清空舊簽名，請點擊「刷新合同意向」後重新執行 使用者簽名 -> 商家簽名 -> 提交釋放。",
-      sepoliaHint:
+      hashkeyCreateHint:
+        "使用 HashKey Chain 測試網上的測試 USDC（{decimals} decimals）。託管總額將均分為「釋放次數」筆；「託管週期」對應鏈上 escrow 到期前可釋放/退款的時間窗（秒級精度由小時換算）。商家地址可透過 NEXT_PUBLIC_DEMO_MERCHANT 設定；未設定時仍為 Anvil 示範商家地址（雙簽需對應私鑰）。",
+      baseSepoliaCreateHint:
         "預設使用 Circle Base Sepolia 測試 USDC（{decimals} decimals）。託管總額將均分為「釋放次數」筆；「託管週期」對應鏈上 escrow 到期前可釋放/退款的時間窗（秒級精度由小時換算）。商家地址可透過 NEXT_PUBLIC_DEMO_MERCHANT 設定；未設定時仍為 Anvil 示範商家地址（雙簽需對應私鑰）。",
-      usdcAddressLabel: "USDC 合約地址（Circle 測試網預設已填，可改）",
+      usdcAddressLabel: "USDC 合約地址（測試網）",
       totalEscrowLabel: "託管總額（USDC）",
       totalEscrowPlaceholder: "例如 10 或 100",
       releaseCountLabel: "釋放次數（均分總額，須整除）",
@@ -319,6 +341,21 @@ export default function PayFiDemo() {
       webhookSecretPlaceholder: "與商戶端驗證 HMAC 的金鑰",
       webhookHint:
         "入金、釋放、退款時服務端會向該 URL POST JSON；需公網 HTTPS 或隧道。逾時見 API 的 WEBHOOK_TIMEOUT_MS。",
+      networkBannerLine: "PayFi · {chain} · Chain ID {id}",
+      hspManualLink: "HSP 使用手冊（HashFans）",
+      stepCreate: "建立意向",
+      stepFund: "鏈上入金",
+      stepRelease: "雙簽釋放",
+      stepRefund: "退款",
+      wizardAdvanced: "進階選項（Webhook）",
+      gatewayOptionalTitle: "可選：HashKey Gateway 收銀台（加分演示）",
+      gatewayOpen: "開啟收銀台",
+      merchantNextStep: "下一步：前往商戶控制台完成商家簽",
+      explorerViewTx: "在區塊瀏覽器查看交易",
+      stepWrongContext: "目前步驟與合同狀態不一致，已為你切換到合適步驟。",
+      stepNeedIntentFirst: "請先建立或載入合同意向（intentId）。",
+      stepNotFundedYet: "請先完成「鏈上入金」後再進行雙簽釋放。",
+      stepAlreadyFunded: "目前合同已不在「待支付」狀態。若託管尚未完成，請查看上一步；否則請在本步繼續釋放或退款。",
     },
     en: {
       userWorkbench: "User Console",
@@ -342,7 +379,7 @@ export default function PayFiDemo() {
         "No wallet detected. Please install MetaMask/Rabby. In some environments, injection requires desktop Chrome and pages served from HTTPS or localhost.",
       switchTo: "Switch to",
       wrongChainNeed: "need",
-      baseSepoliaConnectFirst: "Connect wallet first on Base Sepolia (used as contract intent user).",
+      publicTestnetConnectFirst: "Connect wallet on {chain} first (as contract intent user).",
       releaseCountInvalid: "Release count must be an integer >= 1.",
       noPublicClient: "No public client",
       approveReverted: "Approve transaction reverted",
@@ -359,9 +396,11 @@ export default function PayFiDemo() {
       needBothSigs: "Both user and merchant signatures are required.",
       nonceDesyncHint:
         "Detected releaseNonce desync: on-chain state changed. Cleared old signatures. Click Refresh Contract Intent, then sign as user -> sign as merchant -> submit release again.",
-      sepoliaHint:
+      hashkeyCreateHint:
+        "Uses test USDC on HashKey Chain Testnet ({decimals} decimals). Total escrow is split evenly by release count. Cycle hours map to on-chain escrow duration. Merchant can be set with NEXT_PUBLIC_DEMO_MERCHANT.",
+      baseSepoliaCreateHint:
         "Uses Circle Base Sepolia test USDC ({decimals} decimals). Total escrow is split evenly by release count. Cycle hours map to on-chain escrow duration. Merchant can be set with NEXT_PUBLIC_DEMO_MERCHANT.",
-      usdcAddressLabel: "USDC Contract Address (Circle testnet default prefilled)",
+      usdcAddressLabel: "USDC contract address (testnet)",
       totalEscrowLabel: "Total Escrow (USDC)",
       totalEscrowPlaceholder: "e.g. 10 or 100",
       releaseCountLabel: "Release Count (must divide total evenly)",
@@ -400,6 +439,22 @@ export default function PayFiDemo() {
       webhookSecretPlaceholder: "Shared secret for HMAC verification",
       webhookHint:
         "The API POSTs JSON on fund, release, and refund. Use a public HTTPS URL or a tunnel. See WEBHOOK_TIMEOUT_MS on the API.",
+      networkBannerLine: "PayFi · {chain} · Chain ID {id}",
+      hspManualLink: "HSP user manual (HashFans)",
+      stepCreate: "Create intent",
+      stepFund: "Fund on-chain",
+      stepRelease: "Dual-sign release",
+      stepRefund: "Refund",
+      wizardAdvanced: "Advanced (Webhook)",
+      gatewayOptionalTitle: "Optional: HashKey Gateway checkout (bonus demo)",
+      gatewayOpen: "Open checkout",
+      merchantNextStep: "Next: open Merchant console to sign as merchant",
+      explorerViewTx: "View transaction on explorer",
+      stepWrongContext: "This step does not match the current intent state; switched to the appropriate step.",
+      stepNeedIntentFirst: "Create or load an intent (intentId) first.",
+      stepNotFundedYet: "Complete on-chain funding first, then dual-sign release.",
+      stepAlreadyFunded:
+        "This intent is no longer awaiting funding. Use the previous step if you still need to fund; otherwise continue with release or refund here.",
     },
   }[locale];
   const { address, isConnected, connector } = useAccount();
@@ -448,8 +503,8 @@ export default function PayFiDemo() {
   const [sepoliaTotalUsdc, setSepoliaTotalUsdc] = useState(BASE_SEPOLIA_DEFAULT_USDC_TOTAL);
   const [sepoliaMaxReleases, setSepoliaMaxReleases] = useState(BASE_SEPOLIA_DEFAULT_MAX_RELEASES);
   const [sepoliaCycleHours, setSepoliaCycleHours] = useState(BASE_SEPOLIA_DEFAULT_CYCLE_HOURS);
-  const [sepoliaAssetAddress, setSepoliaAssetAddress] = useState<string>(
-    BASE_SEPOLIA_USDC_ADDRESS,
+  const [sepoliaAssetAddress, setSepoliaAssetAddress] = useState<string>(() =>
+    defaultDemoAssetAddress(targetChainId),
   );
   const [webhookUrl, setWebhookUrl] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
@@ -561,18 +616,25 @@ export default function PayFiDemo() {
     setBusy("create");
     try {
       let body: Record<string, unknown> = { ...defaultCreateBody };
-      if (targetChainId === baseSepolia.id) {
+      if (isPublicUsdcTestnet(targetChainId)) {
         if (!address) {
-          throw new Error(text.baseSepoliaConnectFirst);
+          throw new Error(
+            text.publicTestnetConnectFirst.replace(
+              "{chain}",
+              chainDisplayName(targetChainId, locale),
+            ),
+          );
         }
         const maxRel = Number.parseInt(sepoliaMaxReleases, 10);
         if (!Number.isInteger(maxRel) || maxRel < 1) {
           throw new Error(text.releaseCountInvalid);
         }
         const durationSeconds = parseCycleHoursToDurationSeconds(sepoliaCycleHours);
-        const { amountTotal, amountPerLesson } = sepoliaUsdcToIntentAmounts(
+        const dec = demoUsdcDecimals(targetChainId);
+        const { amountTotal, amountPerLesson } = publicTestnetUsdcToIntentAmounts(
           sepoliaTotalUsdc,
           maxRel,
+          dec,
         );
         const assetTrim = sepoliaAssetAddress.trim();
         const asset = assetTrim
@@ -831,6 +893,50 @@ export default function PayFiDemo() {
     return Date.now() >= intent.expiresAt * 1000;
   }, [intent?.expiresAt]);
 
+  const derivedWizardStep = useMemo(() => {
+    if (!intent?.intentId?.trim()) return 1;
+    if (intent.status === "awaiting_funding") return 2;
+    return 3;
+  }, [intent]);
+
+  const [wizardStep, setWizardStep] = useState(1);
+  useEffect(() => {
+    setWizardStep(derivedWizardStep);
+  }, [derivedWizardStep]);
+
+  const chainLabel = chainDisplayName(targetChainId, locale);
+  const usdcDec = demoUsdcDecimals(targetChainId);
+  const createHintForPublic =
+    targetChainId === HASHKEY_TESTNET_CHAIN_ID
+      ? text.hashkeyCreateHint
+      : text.baseSepoliaCreateHint;
+
+  const canSelectWizardStep = (step: number) => {
+    if (step === 1) return true;
+    if (!intent?.intentId?.trim()) return false;
+    if (step === 2) return true;
+    if (step === 3) return intent.status !== "awaiting_funding";
+    return false;
+  };
+
+  const onSelectWizardStep = (step: number) => {
+    if (!canSelectWizardStep(step)) {
+      setError(text.stepNeedIntentFirst);
+      return;
+    }
+    if (step === 3 && intent?.status === "awaiting_funding") {
+      setError(text.stepWrongContext);
+      return;
+    }
+    setError(null);
+    setWizardStep(step);
+  };
+
+  const lastTxExplorerUrl =
+    lastTx && /^0x[a-fA-F0-9]+$/.test(lastTx)
+      ? blockExplorerTxUrl(targetChainId, lastTx)
+      : null;
+
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 pb-12 pt-6 sm:px-6">
       <header className="payfi-card space-y-4 p-5">
@@ -839,8 +945,25 @@ export default function PayFiDemo() {
             <span className="payfi-title-gradient">PayFi</span>
             <span className="text-zinc-100"> {text.userWorkbench}</span>
           </h1>
+          <p className="mt-1 text-xs font-medium text-sky-300/90">
+            {text.networkBannerLine
+              .replace("{chain}", chainLabel)
+              .replace("{id}", String(targetChainId))}
+          </p>
+          {targetChainId === HASHKEY_TESTNET_CHAIN_ID && (
+            <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+              <a
+                href="https://hashfans.io/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sky-400 underline-offset-2 hover:underline"
+              >
+                {text.hspManualLink}
+              </a>
+            </p>
+          )}
           <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-            chainId {targetChainId} · API <span className="payfi-code">{payfiApiDisplay}</span>
+            API <span className="payfi-code">{payfiApiDisplay}</span>
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -969,146 +1092,248 @@ export default function PayFiDemo() {
 
       {error && <div className="payfi-alert-error">{error}</div>}
 
-      <section className="payfi-card space-y-4 p-5">
-        <h2 className="text-base font-semibold text-zinc-100">{text.createContractIntent}</h2>
-        {targetChainId === baseSepolia.id && (
-          <>
-            <p className="text-xs leading-relaxed text-zinc-500">
-              {text.sepoliaHint.replace("{decimals}", String(BASE_SEPOLIA_USDC_DECIMALS))}{" "}
-              <span className="font-mono text-zinc-400">NEXT_PUBLIC_DEMO_MERCHANT</span>{" "}
-              {locale === "en" ? "." : "。"}
-            </p>
-            <Field label={text.usdcAddressLabel}>
+      <nav
+        className="payfi-card flex flex-wrap gap-2 p-3 sm:px-4"
+        aria-label="PayFi demo steps"
+      >
+        {([1, 2, 3] as const).map((step) => (
+          <button
+            key={step}
+            type="button"
+            disabled={!canSelectWizardStep(step)}
+            onClick={() => onSelectWizardStep(step)}
+            className={`rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${
+              wizardStep === step
+                ? "bg-sky-500/20 text-sky-200 ring-1 ring-sky-500/40"
+                : "bg-white/5 text-zinc-400 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            }`}
+          >
+            {step}.{" "}
+            {step === 1
+              ? text.stepCreate
+              : step === 2
+                ? text.stepFund
+                : text.stepRelease}
+          </button>
+        ))}
+      </nav>
+
+      {wizardStep === 1 && (
+        <section className="payfi-card space-y-4 p-5">
+          <h2 className="text-base font-semibold text-zinc-100">{text.createContractIntent}</h2>
+          {isPublicUsdcTestnet(targetChainId) && (
+            <>
+              <p className="text-xs leading-relaxed text-zinc-500">
+                {createHintForPublic.replace("{decimals}", String(usdcDec))}{" "}
+                <span className="font-mono text-zinc-400">NEXT_PUBLIC_DEMO_MERCHANT</span>{" "}
+                {locale === "en" ? "." : "。"}
+              </p>
+              <Field label={text.usdcAddressLabel}>
+                <input
+                  className="payfi-input font-mono text-xs"
+                  type="text"
+                  spellCheck={false}
+                  autoComplete="off"
+                  value={sepoliaAssetAddress}
+                  onChange={(e) => setSepoliaAssetAddress(e.target.value)}
+                  placeholder={defaultDemoAssetAddress(targetChainId)}
+                />
+              </Field>
+              <Field label={text.totalEscrowLabel}>
+                <input
+                  className="payfi-input font-mono text-sm"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={sepoliaTotalUsdc}
+                  onChange={(e) => setSepoliaTotalUsdc(e.target.value)}
+                  placeholder={text.totalEscrowPlaceholder}
+                />
+              </Field>
+              <Field label={text.releaseCountLabel}>
+                <input
+                  className="payfi-input w-full max-w-[12rem] font-mono text-sm"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={sepoliaMaxReleases}
+                  onChange={(e) =>
+                    setSepoliaMaxReleases(e.target.value.replace(/\D/g, "") || "1")
+                  }
+                />
+              </Field>
+              <Field label={text.cycleHoursLabel}>
+                <input
+                  className="payfi-input w-full max-w-[12rem] font-mono text-sm"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={sepoliaCycleHours}
+                  onChange={(e) => setSepoliaCycleHours(e.target.value)}
+                  placeholder={text.cycleHoursPlaceholder}
+                />
+              </Field>
+            </>
+          )}
+          <details className="rounded-xl border border-white/10 bg-black/20 p-3">
+            <summary className="cursor-pointer text-sm font-medium text-zinc-300">
+              {text.wizardAdvanced}
+            </summary>
+            <p className="mt-2 text-xs leading-relaxed text-zinc-500">{text.webhookHint}</p>
+            <Field label={text.webhookUrlLabel}>
               <input
                 className="payfi-input font-mono text-xs"
-                type="text"
+                type="url"
                 spellCheck={false}
                 autoComplete="off"
-                value={sepoliaAssetAddress}
-                onChange={(e) => setSepoliaAssetAddress(e.target.value)}
-                placeholder={BASE_SEPOLIA_USDC_ADDRESS}
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+                placeholder={text.webhookUrlPlaceholder}
               />
             </Field>
-            <Field label={text.totalEscrowLabel}>
+            <Field label={text.webhookSecretLabel}>
               <input
-                className="payfi-input font-mono text-sm"
-                type="text"
-                inputMode="decimal"
+                className="payfi-input font-mono text-xs"
+                type="password"
+                spellCheck={false}
                 autoComplete="off"
-                value={sepoliaTotalUsdc}
-                onChange={(e) => setSepoliaTotalUsdc(e.target.value)}
-                placeholder={text.totalEscrowPlaceholder}
+                value={webhookSecret}
+                onChange={(e) => setWebhookSecret(e.target.value)}
+                placeholder={text.webhookSecretPlaceholder}
               />
             </Field>
-            <Field label={text.releaseCountLabel}>
+          </details>
+          <button
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => void onCreate()}
+            className="payfi-btn-primary w-full sm:w-auto"
+          >
+            {busy === "create" ? text.creating : text.createIntent}
+          </button>
+          <Field label={text.intentIdLabel}>
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
-                className="payfi-input w-full max-w-[12rem] font-mono text-sm"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={sepoliaMaxReleases}
-                onChange={(e) => setSepoliaMaxReleases(e.target.value.replace(/\D/g, "") || "1")}
+                className="payfi-input flex-1 font-mono text-xs"
+                value={intentId}
+                onChange={(e) => setIntentId(e.target.value)}
+                placeholder={text.intentPlaceholder}
               />
-            </Field>
-            <Field label={text.cycleHoursLabel}>
-              <input
-                className="payfi-input w-full max-w-[12rem] font-mono text-sm"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                value={sepoliaCycleHours}
-                onChange={(e) => setSepoliaCycleHours(e.target.value)}
-                placeholder={text.cycleHoursPlaceholder}
-              />
-            </Field>
-          </>
-        )}
-        <p className="text-xs leading-relaxed text-zinc-500">{text.webhookHint}</p>
-        <Field label={text.webhookUrlLabel}>
-          <input
-            className="payfi-input font-mono text-xs"
-            type="url"
-            spellCheck={false}
-            autoComplete="off"
-            value={webhookUrl}
-            onChange={(e) => setWebhookUrl(e.target.value)}
-            placeholder={text.webhookUrlPlaceholder}
-          />
-        </Field>
-        <Field label={text.webhookSecretLabel}>
-          <input
-            className="payfi-input font-mono text-xs"
-            type="password"
-            spellCheck={false}
-            autoComplete="off"
-            value={webhookSecret}
-            onChange={(e) => setWebhookSecret(e.target.value)}
-            placeholder={text.webhookSecretPlaceholder}
-          />
-        </Field>
-        <button
-          type="button"
-          disabled={Boolean(busy)}
-          onClick={() => void onCreate()}
-          className="payfi-btn-primary w-full sm:w-auto"
-        >
-          {busy === "create" ? text.creating : text.createIntent}
-        </button>
-        <Field label={text.intentIdLabel}>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              className="payfi-input flex-1 font-mono text-xs"
-              value={intentId}
-              onChange={(e) => setIntentId(e.target.value)}
-              placeholder={text.intentPlaceholder}
-            />
-            <button
-              type="button"
-              onClick={() => void refreshIntent()}
-              className="payfi-btn-ghost whitespace-nowrap"
-            >
-              {text.refreshIntent}
-            </button>
-          </div>
-        </Field>
-        {intent && (
-          <pre className="max-h-64 overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
-            {JSON.stringify(intent, null, 2)}
-          </pre>
-        )}
-      </section>
-
-      {intent && intent.status === "awaiting_funding" && (
-        <section className="payfi-card space-y-4 p-5">
-          <h2 className="text-base font-semibold text-zinc-100">{text.funding}</h2>
-          <p className="text-xs text-zinc-500">
-            {text.fundingHint.replace("{user}", intent.user)}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={Boolean(busy) || onWrongChain}
-              onClick={() => void onApprove()}
-              className="payfi-btn-secondary"
-            >
-              {busy === "approve" ? text.approving : text.approveToken}
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(busy) || onWrongChain}
-              onClick={() => void onDeposit()}
-              className="payfi-btn-primary"
-            >
-              {busy === "deposit" ? text.depositing : text.depositEscrow}
-            </button>
-          </div>
-          {lastTx && (
-            <p className="font-mono text-[11px] text-zinc-500">{text.lastTx}: {lastTx}</p>
+              <button
+                type="button"
+                onClick={() => void refreshIntent()}
+                className="payfi-btn-ghost whitespace-nowrap"
+              >
+                {text.refreshIntent}
+              </button>
+            </div>
+          </Field>
+          {intent?.paymentUrl && (
+            <details className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+              <summary className="cursor-pointer text-sm font-medium text-amber-200/90">
+                {text.gatewayOptionalTitle}
+              </summary>
+              <p className="mt-2 text-xs text-zinc-500">
+                <a
+                  href={intent.paymentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-400 underline-offset-2 hover:underline"
+                >
+                  {text.gatewayOpen}
+                </a>
+              </p>
+            </details>
+          )}
+          {intent && (
+            <pre className="max-h-64 overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
+              {JSON.stringify(intent, null, 2)}
+            </pre>
           )}
         </section>
       )}
 
-      {intent &&
+      {wizardStep === 2 && (
+        <section className="payfi-card space-y-4 p-5">
+          <h2 className="text-base font-semibold text-zinc-100">{text.stepFund}</h2>
+          {!intent?.intentId?.trim() ? (
+            <p className="text-sm text-zinc-400">{text.stepNeedIntentFirst}</p>
+          ) : intent.status !== "awaiting_funding" ? (
+            <div className="space-y-3">
+              <p className="text-sm leading-relaxed text-zinc-400">{text.stepAlreadyFunded}</p>
+              <button
+                type="button"
+                onClick={() => setWizardStep(3)}
+                className="payfi-btn-secondary"
+              >
+                {text.stepRelease} →
+              </button>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-zinc-500">
+                {text.fundingHint.replace("{user}", intent.user)}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(busy) || onWrongChain}
+                  onClick={() => void onApprove()}
+                  className="payfi-btn-secondary"
+                >
+                  {busy === "approve" ? text.approving : text.approveToken}
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(busy) || onWrongChain}
+                  onClick={() => void onDeposit()}
+                  className="payfi-btn-primary"
+                >
+                  {busy === "deposit" ? text.depositing : text.depositEscrow}
+                </button>
+              </div>
+              {lastTx && (
+                <p className="font-mono text-[11px] text-zinc-500">
+                  {text.lastTx}: {lastTx}
+                  {lastTxExplorerUrl ? (
+                    <>
+                      {" "}
+                      <a
+                        href={lastTxExplorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sky-400 underline-offset-2 hover:underline"
+                      >
+                        {text.explorerViewTx}
+                      </a>
+                    </>
+                  ) : null}
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      {wizardStep === 3 && !intent?.intentId?.trim() && (
+        <p className="payfi-card p-5 text-sm text-zinc-400">{text.stepNeedIntentFirst}</p>
+      )}
+
+      {wizardStep === 3 && intent && intent.status === "awaiting_funding" && (
+        <div className="payfi-card space-y-3 p-5">
+          <p className="text-sm text-zinc-400">{text.stepNotFundedYet}</p>
+          <button
+            type="button"
+            onClick={() => setWizardStep(2)}
+            className="payfi-btn-secondary"
+          >
+            {text.stepFund} →
+          </button>
+        </div>
+      )}
+
+      {wizardStep === 3 &&
+        intent &&
         (intent.status === "active" || intent.status === "partially_settled") && (
           <section className="payfi-card space-y-4 p-5">
             <h2 className="text-base font-semibold text-zinc-100">{text.release}</h2>
@@ -1123,12 +1348,14 @@ export default function PayFiDemo() {
                 {text.needUser} <span className="font-mono text-zinc-300">{intent.user}</span>
               </div>
               <div className="mt-1">
-                {text.needMerchant} <span className="font-mono text-zinc-300">{intent.merchant}</span>
+                {text.needMerchant}{" "}
+                <span className="font-mono text-zinc-300">{intent.merchant}</span>
               </div>
             </div>
             <ol className="list-decimal space-y-1.5 pl-5 text-sm text-zinc-400">
               <li>
-                {text.stepUserSign} <strong className="text-zinc-200">{text.signAsUser}</strong>
+                {text.stepUserSign}{" "}
+                <strong className="text-zinc-200">{text.signAsUser}</strong>
               </li>
               <li>
                 {text.stepSwitchMerchant}{" "}
@@ -1164,6 +1391,16 @@ export default function PayFiDemo() {
                 {busy === "submit-release" ? text.submitting : text.submitRelease}
               </button>
             </div>
+            {userSig && !merchantSig && (
+              <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-3 text-sm">
+                <Link
+                  href="/merchant"
+                  className="font-medium text-violet-200 underline-offset-2 hover:underline"
+                >
+                  {text.merchantNextStep} →
+                </Link>
+              </div>
+            )}
             <div className="grid gap-2 font-mono text-[11px] text-zinc-500">
               <span>userSig: {userSig ? `${userSig.slice(0, 18)}…` : "—"}</span>
               <span>
@@ -1179,7 +1416,8 @@ export default function PayFiDemo() {
           </section>
         )}
 
-      {intent &&
+      {wizardStep === 3 &&
+        intent &&
         (intent.status === "active" || intent.status === "partially_settled") &&
         remainingAmount !== null &&
         remainingAmount > BigInt(0) && (
@@ -1199,8 +1437,8 @@ export default function PayFiDemo() {
               <p>
                 {text.refundAmount}{" "}
                 <span className="font-mono text-zinc-300">
-                  {targetChainId === baseSepolia.id
-                    ? `${formatUnits(remainingAmount, BASE_SEPOLIA_USDC_DECIMALS)} USDC (${remainingAmount.toString()})`
+                  {isPublicUsdcTestnet(targetChainId)
+                    ? `${formatUnits(remainingAmount, demoUsdcDecimals(targetChainId))} USDC (${remainingAmount.toString()})`
                     : remainingAmount.toString()}
                 </span>
               </p>

@@ -13,9 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteDescription =
+  typeof process.env.NEXT_PUBLIC_SITE_DESCRIPTION === "string" &&
+  process.env.NEXT_PUBLIC_SITE_DESCRIPTION.length > 0
+    ? process.env.NEXT_PUBLIC_SITE_DESCRIPTION
+    : "PayFi 托管演示：Next.js + wagmi（HashKey / 测试网可配置）";
+
 export const metadata: Metadata = {
   title: "PayFi demo",
-  description: "PayFi escrow UI: Next.js + wagmi (Base Sepolia)",
+  description: siteDescription,
 };
 
 export default function RootLayout({
