@@ -36,6 +36,7 @@ import {
   type ReleasePrepareResponse,
 } from "@/lib/payfi-api";
 import { domainFromApi, releaseMessageFromApi } from "@/lib/release-typed-data";
+import { releaseStoreKey, type StoredReleaseState } from "@/lib/release-local-state";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
 import { blockExplorerTxUrl } from "@/lib/explorer";
 import {
@@ -131,16 +132,6 @@ const defaultCreateBodyStatic = {
     "0x0000000000000000000000000000000000000000000000000000000000000000",
   termsVersion: "1.0.0",
 };
-
-type StoredReleaseState = {
-  userSig: `0x${string}` | null;
-  merchantSig: `0x${string}` | null;
-  releasePrep: ReleasePrepareResponse | null;
-};
-
-function releaseStoreKey(intentId: string) {
-  return `payfi.release.${intentId}`;
-}
 
 function Field({
   label,
@@ -248,11 +239,14 @@ export default function PayFiDemo() {
       stepCreate: "创建意向",
       stepFund: "链上入金",
       stepRelease: "双签释放",
+      stepRefundNav: "剩余退回",
+      dualSignMerchantLine:
+        "商家请到商家控制台连接商家钱包并完成商家签名（或使用下方链接）。",
       stepRefund: "退款",
       wizardAdvanced: "高级选项（Webhook）",
       gatewayOptionalTitle: "可选：HashKey Gateway 收银台（加分演示）",
       gatewayOpen: "打开收银台",
-      merchantNextStep: "下一步：前往商户控制台完成商家签",
+      merchantNextStep: "前往商家控制台完成商家签名 →",
       explorerViewTx: "在区块浏览器查看交易",
       stepWrongContext: "当前步骤与合同状态不一致，已为你切换到合适步骤。",
       stepNeedIntentFirst: "请先创建或加载合同意向（intentId）。",
@@ -346,11 +340,14 @@ export default function PayFiDemo() {
       stepCreate: "建立意向",
       stepFund: "鏈上入金",
       stepRelease: "雙簽釋放",
+      stepRefundNav: "退回剩餘",
+      dualSignMerchantLine:
+        "商家請到商家控制台連接商家錢包並完成商家簽名（或使用下方連結）。",
       stepRefund: "退款",
       wizardAdvanced: "進階選項（Webhook）",
       gatewayOptionalTitle: "可選：HashKey Gateway 收銀台（加分演示）",
       gatewayOpen: "開啟收銀台",
-      merchantNextStep: "下一步：前往商戶控制台完成商家簽",
+      merchantNextStep: "前往商家控制台完成商家簽名 →",
       explorerViewTx: "在區塊瀏覽器查看交易",
       stepWrongContext: "目前步驟與合同狀態不一致，已為你切換到合適步驟。",
       stepNeedIntentFirst: "請先建立或載入合同意向（intentId）。",
@@ -444,11 +441,14 @@ export default function PayFiDemo() {
       stepCreate: "Create intent",
       stepFund: "Fund on-chain",
       stepRelease: "Dual-sign release",
+      stepRefundNav: "Refund remainder",
+      dualSignMerchantLine:
+        "Merchant: open Merchant console, connect the merchant wallet, and sign (or use the link below).",
       stepRefund: "Refund",
       wizardAdvanced: "Advanced (Webhook)",
       gatewayOptionalTitle: "Optional: HashKey Gateway checkout (bonus demo)",
       gatewayOpen: "Open checkout",
-      merchantNextStep: "Next: open Merchant console to sign as merchant",
+      merchantNextStep: "Open Merchant console to sign as merchant →",
       explorerViewTx: "View transaction on explorer",
       stepWrongContext: "This step does not match the current intent state; switched to the appropriate step.",
       stepNeedIntentFirst: "Create or load an intent (intentId) first.",
@@ -526,6 +526,19 @@ export default function PayFiDemo() {
     setError(null);
     const row = await getIntent(intentId.trim());
     setIntent(row);
+    const id = intentId.trim();
+    if (typeof window !== "undefined" && id) {
+      try {
+        const raw = window.localStorage.getItem(releaseStoreKey(id));
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as StoredReleaseState;
+        setUserSig(parsed.userSig ?? null);
+        setMerchantSig(parsed.merchantSig ?? null);
+        setReleasePrep(parsed.releasePrep ?? null);
+      } catch {
+        // ignore malformed cache
+      }
+    }
   }, [intentId]);
 
   useEffect(() => {
@@ -782,57 +795,6 @@ export default function PayFiDemo() {
     }
   };
 
-  const onSignMerchant = async () => {
-    if (!intent || !address) {
-      setError(text.connectAndLoadFirst);
-      return;
-    }
-    if (!userSig || !releasePrep) {
-      setReleaseHint(
-        text.needUserSigFirst,
-      );
-      setError(text.signUserFirst);
-      return;
-    }
-    setError(null);
-    setReleaseHint(null);
-    setBusy("sign-merchant");
-    try {
-      await ensureTargetChain();
-      if (getAddress(address) !== getAddress(intent.merchant)) {
-        throw new Error(`${text.walletMustBeMerchant} ${intent.merchant}. ${text.switchAccount}`);
-      }
-      const prep = releasePrep;
-      const domain = domainFromApi(prep.typedData.domain as Record<string, unknown>);
-      const message = releaseMessageFromApi(prep.typedData.message);
-      const types = prep.typedData.types as Record<
-        string,
-        Array<{ name: string; type: string }>
-      >;
-      const sig = await signTypedDataAsync({
-        domain,
-        types,
-        primaryType: "Release",
-        message,
-      });
-      const recovered = await recoverTypedDataAddress({
-        domain,
-        types,
-        primaryType: "Release",
-        message,
-        signature: sig,
-      });
-      if (getAddress(recovered) !== getAddress(intent.merchant)) {
-        throw new Error(text.merchantSigRecoverFail);
-      }
-      setMerchantSig(sig);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const onReleaseSubmit = async () => {
     if (!intent || !userSig || !merchantSig) {
       setError(text.needBothSigs);
@@ -916,6 +878,12 @@ export default function PayFiDemo() {
     if (!intent?.intentId?.trim()) return false;
     if (step === 2) return true;
     if (step === 3) return intent.status !== "awaiting_funding";
+    if (step === 4) {
+      if (intent.status !== "active" && intent.status !== "partially_settled") {
+        return false;
+      }
+      return remainingAmount !== null && remainingAmount > BigInt(0);
+    }
     return false;
   };
 
@@ -1096,7 +1064,7 @@ export default function PayFiDemo() {
         className="payfi-card flex flex-wrap gap-2 p-3 sm:px-4"
         aria-label="PayFi demo steps"
       >
-        {([1, 2, 3] as const).map((step) => (
+        {([1, 2, 3, 4] as const).map((step) => (
           <button
             key={step}
             type="button"
@@ -1113,7 +1081,9 @@ export default function PayFiDemo() {
               ? text.stepCreate
               : step === 2
                 ? text.stepFund
-                : text.stepRelease}
+                : step === 3
+                  ? text.stepRelease
+                  : text.stepRefundNav}
           </button>
         ))}
       </nav>
@@ -1358,8 +1328,13 @@ export default function PayFiDemo() {
                 <strong className="text-zinc-200">{text.signAsUser}</strong>
               </li>
               <li>
-                {text.stepSwitchMerchant}{" "}
-                <strong className="text-zinc-200">{text.signAsMerchant}</strong>
+                {text.dualSignMerchantLine}{" "}
+                <Link
+                  href={`/merchant?intentId=${encodeURIComponent(intent.intentId)}`}
+                  className="font-medium text-violet-200 underline-offset-2 hover:underline"
+                >
+                  {text.merchantNextStep}
+                </Link>
               </li>
               <li>
                 <strong className="text-zinc-200">{text.stepSubmit}</strong>（{text.serverSubmit}）
@@ -1376,14 +1351,6 @@ export default function PayFiDemo() {
               </button>
               <button
                 type="button"
-                disabled={Boolean(busy) || onWrongChain}
-                onClick={() => void onSignMerchant()}
-                className="payfi-btn-secondary"
-              >
-                {busy === "sign-merchant" ? text.signing : text.signAsMerchant}
-              </button>
-              <button
-                type="button"
                 disabled={Boolean(busy)}
                 onClick={() => void onReleaseSubmit()}
                 className="payfi-btn-primary"
@@ -1392,12 +1359,12 @@ export default function PayFiDemo() {
               </button>
             </div>
             {userSig && !merchantSig && (
-              <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-3 text-sm">
+              <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-3 text-sm text-violet-100/90">
                 <Link
-                  href="/merchant"
+                  href={`/merchant?intentId=${encodeURIComponent(intent.intentId)}`}
                   className="font-medium text-violet-200 underline-offset-2 hover:underline"
                 >
-                  {text.merchantNextStep} →
+                  {text.merchantNextStep}
                 </Link>
               </div>
             )}
@@ -1416,7 +1383,7 @@ export default function PayFiDemo() {
           </section>
         )}
 
-      {wizardStep === 3 &&
+      {wizardStep === 4 &&
         intent &&
         (intent.status === "active" || intent.status === "partially_settled") &&
         remainingAmount !== null &&

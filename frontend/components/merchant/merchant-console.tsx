@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import MerchantReleasePanel from "@/components/merchant/merchant-release-panel";
 import PayFiLogo from "@/components/ui/payfi-logo";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -79,6 +81,7 @@ export default function MerchantConsole() {
       detail: "合同意向详情",
       openDetail: "打开详情页",
       signWorkspace: "进入签名工作台",
+      merchantSignHint: "在下方列表中选择一条合同意向后，可在此连接钱包并完成商家签名。",
       noEvents: "暂无事件，点击右上角刷新。",
       userAddress: "用户地址（完整）",
       totalSpend: "累计消费",
@@ -110,6 +113,7 @@ export default function MerchantConsole() {
       detail: "合同意向詳情",
       openDetail: "開啟詳情頁",
       signWorkspace: "進入簽名工作台",
+      merchantSignHint: "在下方列表中選擇一筆合同意向後，可在此連接錢包並完成商家簽名。",
       noEvents: "暫無事件，點擊右上角刷新。",
       userAddress: "使用者地址（完整）",
       totalSpend: "累計消費",
@@ -141,6 +145,7 @@ export default function MerchantConsole() {
       detail: "Contract Intent Details",
       openDetail: "Open Details",
       signWorkspace: "Open Signing Console",
+      merchantSignHint: "Select a contract intent from the list below to connect a wallet and sign as merchant.",
       noEvents: "No events yet. Click Refresh above.",
       userAddress: "User address (full)",
       totalSpend: "Total Spend",
@@ -158,6 +163,12 @@ export default function MerchantConsole() {
   const [userFilter, setUserFilter] = useState("");
   const [spendUser, setSpendUser] = useState("");
   const [selectedIntentId, setSelectedIntentId] = useState("");
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const q = searchParams.get("intentId")?.trim();
+    if (q) setSelectedIntentId(q);
+  }, [searchParams]);
 
   const reload = async () => {
     setLoading(true);
@@ -307,6 +318,11 @@ export default function MerchantConsole() {
 
       {tab === "intents" && (
         <section className="payfi-card space-y-4 p-5">
+          {!selectedIntent ? (
+            <p className="text-xs text-zinc-500">{text.merchantSignHint}</p>
+          ) : (
+            <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
+          )}
           <div className="flex flex-col gap-2 md:flex-row">
             <select
               value={statusFilter}
