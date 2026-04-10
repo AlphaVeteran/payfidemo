@@ -3,9 +3,18 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
+import {
+  useAccount,
+  useChainId,
+  useConnect,
+  useDisconnect,
+  useSwitchChain,
+} from "wagmi";
 import MerchantReleasePanel from "@/components/merchant/merchant-release-panel";
 import PayFiLogo from "@/components/ui/payfi-logo";
 import { useI18n } from "@/lib/i18n";
+import { targetChain, targetChainId } from "@/lib/wagmi-config";
 import {
   getSettlementOutboxEvents,
   listIntents,
@@ -13,7 +22,7 @@ import {
   type SettlementOutboxEvent,
 } from "@/lib/payfi-api";
 
-type TabKey = "dashboard" | "intents" | "history" | "spend";
+type TabKey = "dashboard" | "intents" | "sign-release" | "history" | "spend";
 
 function statusText(status: string, locale: "zh-CN" | "zh-TW" | "en") {
   switch (status) {
@@ -66,10 +75,23 @@ export default function MerchantConsole() {
       homeDesc: "返回角色入口与最近记录",
       userSideDesc: "进入用户工作台进行签名与支付",
       openCta: "进入 →",
-      refresh: "刷新",
-      refreshing: "刷新中…",
+      connectWallet: "连接钱包",
+      connecting: "连接中…",
+      chooseWallet: "选择钱包",
+      close: "关闭",
+      walletHint:
+        "列表来自钱包的 EIP-6963 广播；点选即可连接。若某扩展明确报告不可用，会显示「未检测到」并禁用。",
+      walletUnavailable: "未检测到",
+      noWalletDetected:
+        "当前没有检测到钱包。请确认已安装 MetaMask / Rabby 等扩展；部分环境需用桌面 Chrome 且页面由 HTTPS 或 localhost 打开，扩展才会注入。",
+      disconnect: "断开",
+      switchTo: "切换到",
+      wrongChainNeed: "需",
       overview: "总览",
       intents: "合同意向",
+      signRelease: "商家签名与释放",
+      signReleaseHint: "仅展示可双签释放的合同意向（托管中 / 部分结算）。",
+      noReleasableIntents: "暂无可双签释放的合同意向。",
       history: "历史",
       spend: "消费",
       pending: "待支付",
@@ -98,10 +120,23 @@ export default function MerchantConsole() {
       homeDesc: "返回角色入口與最近記錄",
       userSideDesc: "進入使用者工作台進行簽名與支付",
       openCta: "進入 →",
-      refresh: "刷新",
-      refreshing: "刷新中…",
+      connectWallet: "連接錢包",
+      connecting: "連接中…",
+      chooseWallet: "選擇錢包",
+      close: "關閉",
+      walletHint:
+        "清單來自錢包的 EIP-6963 廣播；點選即可連接。若某擴充明確回報不可用，會顯示「未檢測到」並停用。",
+      walletUnavailable: "未檢測到",
+      noWalletDetected:
+        "目前未檢測到錢包。請確認已安裝 MetaMask / Rabby 等擴充；部分環境需使用桌面 Chrome，且頁面由 HTTPS 或 localhost 開啟，擴充才會注入。",
+      disconnect: "斷開",
+      switchTo: "切換到",
+      wrongChainNeed: "需",
       overview: "總覽",
       intents: "合同意向",
+      signRelease: "商家簽名與釋放",
+      signReleaseHint: "僅顯示可雙簽釋放的合同意向（託管中 / 部分結算）。",
+      noReleasableIntents: "暫無可雙簽釋放的合同意向。",
       history: "歷史",
       spend: "消費",
       pending: "待支付",
@@ -130,10 +165,23 @@ export default function MerchantConsole() {
       homeDesc: "Back to role entry and recent records",
       userSideDesc: "Open user console for signing and payments",
       openCta: "Open →",
-      refresh: "Refresh",
-      refreshing: "Refreshing…",
+      connectWallet: "Connect wallet",
+      connecting: "Connecting…",
+      chooseWallet: "Choose wallet",
+      close: "Close",
+      walletHint:
+        "Wallets are discovered via EIP-6963. Click to connect. If a wallet reports unavailable, it is disabled.",
+      walletUnavailable: "Unavailable",
+      noWalletDetected:
+        "No wallet detected. Please install MetaMask/Rabby. In some environments, injection requires desktop Chrome and pages served from HTTPS or localhost.",
+      disconnect: "Disconnect",
+      switchTo: "Switch to",
+      wrongChainNeed: "need",
       overview: "Overview",
       intents: "Contract Intents",
+      signRelease: "Merchant Sign & Release",
+      signReleaseHint: "Only intents eligible for dual-sign release are listed (active / partially settled).",
+      noReleasableIntents: "No intents are currently eligible for merchant sign and release.",
       history: "History",
       spend: "Spend",
       pending: "Awaiting Funding",
@@ -164,11 +212,56 @@ export default function MerchantConsole() {
   const [spendUser, setSpendUser] = useState("");
   const [selectedIntentId, setSelectedIntentId] = useState("");
   const searchParams = useSearchParams();
+  const { address, isConnected, connector } = useAccount();
+  const chainId = useChainId();
+  const { connect, connectors, isPending: connectPending } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { switchChainAsync, isPending: switchPending } = useSwitchChain();
+  const [mounted, setMounted] = useState(false);
+  const [walletPickerOpen, setWalletPickerOpen] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const effectiveIsConnected = mounted ? isConnected : false;
+  const effectiveChainId = mounted ? chainId : targetChainId;
+  const effectiveAddress = mounted ? address : null;
+  const onWrongChain = effectiveChainId !== targetChainId;
+  const walletConnectors = useMemo(
+    () => [...connectors].sort((a, b) => a.name.localeCompare(b.name, "en")),
+    [connectors],
+  );
 
   useEffect(() => {
     const q = searchParams.get("intentId")?.trim();
-    if (q) setSelectedIntentId(q);
+    if (q) {
+      setSelectedIntentId(q);
+      setTab("sign-release");
+    }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (isConnected) setWalletPickerOpen(false);
+  }, [isConnected]);
+
+  useEffect(() => {
+    if (!walletPickerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setWalletPickerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [walletPickerOpen]);
+
+  useEffect(() => {
+    if (!walletPickerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [walletPickerOpen]);
 
   const reload = async () => {
     setLoading(true);
@@ -235,13 +328,27 @@ export default function MerchantConsole() {
   const selectedIntent = selectedIntentId
     ? intents.find((i) => i.intentId === selectedIntentId) ?? null
     : null;
+  const releasableIntents = useMemo(
+    () => intents.filter((i) => i.status === "active" || i.status === "partially_settled"),
+    [intents],
+  );
 
   useEffect(() => {
     void reload();
   }, []);
 
+  useEffect(() => {
+    if (selectedIntentId.trim()) return;
+    const firstReleasable = intents.find(
+      (i) => i.status === "active" || i.status === "partially_settled",
+    );
+    if (firstReleasable) {
+      setSelectedIntentId(firstReleasable.intentId);
+    }
+  }, [intents, selectedIntentId]);
+
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 pb-12 pt-6 sm:px-6">
+    <main className="mx-auto flex min-h-screen w-full max-w-[28rem] flex-col gap-6 px-4 pb-12 pt-6 sm:max-w-6xl sm:px-6">
       <header className="payfi-card flex flex-wrap items-start justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
           <PayFiLogo />
@@ -254,9 +361,126 @@ export default function MerchantConsole() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 pr-20 sm:pr-32">
-          <button type="button" onClick={() => void reload()} className="payfi-btn-primary text-xs">
-            {loading ? text.refreshing : text.refresh}
-          </button>
+          {!effectiveIsConnected ? (
+            <>
+              <button
+                type="button"
+                disabled={connectPending || !mounted}
+                onClick={() => setWalletPickerOpen((o) => !o)}
+                className="payfi-btn-primary text-xs"
+                aria-expanded={walletPickerOpen}
+                aria-haspopup="dialog"
+                aria-controls="wallet-picker-panel"
+              >
+                {connectPending ? text.connecting : text.connectWallet}
+              </button>
+              {mounted &&
+                walletPickerOpen &&
+                typeof document !== "undefined" &&
+                createPortal(
+                  <div className="fixed inset-0 z-[100]" role="presentation">
+                    <button
+                      type="button"
+                      className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+                      aria-label={text.close}
+                      onClick={() => setWalletPickerOpen(false)}
+                    />
+                    <aside
+                      id="wallet-picker-panel"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-labelledby="wallet-picker-title"
+                      className="absolute right-0 top-0 z-[101] flex h-full w-[min(19rem,100vw)] flex-col border-l border-white/10 bg-zinc-950/98 py-4 shadow-[-16px_0_48px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:right-4 sm:top-4 sm:h-[calc(100vh-2rem)] sm:rounded-2xl sm:border sm:border-white/10"
+                    >
+                      <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 pb-3">
+                        <h2
+                          id="wallet-picker-title"
+                          className="text-sm font-semibold tracking-tight text-zinc-100"
+                        >
+                          {text.chooseWallet}
+                        </h2>
+                        <button
+                          type="button"
+                          onClick={() => setWalletPickerOpen(false)}
+                          className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                          aria-label={text.close}
+                        >
+                          {text.close}
+                        </button>
+                      </div>
+                      <p className="px-4 pt-3 text-[11px] leading-relaxed text-zinc-500">
+                        {text.walletHint}
+                      </p>
+                      <div
+                        role="listbox"
+                        aria-labelledby="wallet-picker-title"
+                        className="mt-2 flex-1 overflow-y-auto px-2 pb-4"
+                      >
+                        {walletConnectors.length === 0 ? (
+                          <p className="px-2 py-4 text-xs leading-relaxed text-zinc-500">
+                            {text.noWalletDetected}
+                          </p>
+                        ) : (
+                          walletConnectors.map((c) => {
+                            const unavailable = c.ready === false;
+                            return (
+                              <button
+                                key={`${c.id}-${c.uid}`}
+                                type="button"
+                                role="option"
+                                aria-selected={false}
+                                disabled={unavailable || connectPending}
+                                onClick={() => {
+                                  connect({ connector: c });
+                                  setWalletPickerOpen(false);
+                                }}
+                                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                                {unavailable && (
+                                  <span className="shrink-0 text-[10px] font-normal text-zinc-500">
+                                    {text.walletUnavailable}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </aside>
+                  </div>,
+                  document.body,
+                )}
+            </>
+          ) : (
+            <>
+              <span className="font-mono text-[11px] text-zinc-300">{effectiveAddress ?? "—"}</span>
+              {connector && <span className="text-[11px] text-zinc-500">· {connector.name}</span>}
+              <button
+                type="button"
+                onClick={() => disconnect()}
+                className="payfi-btn-ghost text-xs"
+              >
+                {text.disconnect}
+              </button>
+            </>
+          )}
+          {effectiveIsConnected && onWrongChain && (
+            <button
+              type="button"
+              disabled={switchPending}
+              onClick={() => void switchChainAsync({ chainId: targetChainId })}
+              className="payfi-btn-secondary text-xs"
+            >
+              {text.switchTo} {targetChain.name}
+            </button>
+          )}
+          {effectiveIsConnected && (
+            <span className="text-[11px] text-zinc-500">
+              {effectiveChainId}
+              {onWrongChain && ` → ${text.wrongChainNeed} ${targetChainId}`}
+            </span>
+          )}
         </div>
       </header>
 
@@ -280,6 +504,7 @@ export default function MerchantConsole() {
           [
             ["dashboard", text.overview],
             ["intents", text.intents],
+            ["sign-release", text.signRelease],
             ["history", text.history],
             ["spend", text.spend],
           ] as const
@@ -410,6 +635,45 @@ export default function MerchantConsole() {
                 </pre>
               </div>
             ))
+          )}
+        </section>
+      )}
+
+      {tab === "sign-release" && (
+        <section className="payfi-card space-y-4 p-5">
+          <p className="text-xs text-zinc-500">{text.signReleaseHint}</p>
+          {!selectedIntent ? (
+            <p className="text-xs text-zinc-500">{text.merchantSignHint}</p>
+          ) : (
+            <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
+          )}
+          {releasableIntents.length === 0 ? (
+            <p className="text-sm text-zinc-500">{text.noReleasableIntents}</p>
+          ) : (
+            <div className="space-y-2">
+              {releasableIntents.map((i) => (
+                <button
+                  key={i.intentId}
+                  type="button"
+                  onClick={() => setSelectedIntentId(i.intentId)}
+                  className={`payfi-card-hover w-full rounded-xl border px-3 py-3 text-left transition ${
+                    selectedIntentId === i.intentId
+                      ? "border-sky-500/40 bg-sky-500/5"
+                      : "border-white/8 bg-black/25"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-mono text-[11px] text-zinc-300">{i.intentId}</span>
+                    <span className="shrink-0 text-xs text-zinc-500">
+                      {statusText(i.status, locale)}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-zinc-500">
+                    {i.user.slice(0, 10)}… | {i.releasedTotal}/{i.amountTotal}
+                  </div>
+                </button>
+              ))}
+            </div>
           )}
         </section>
       )}

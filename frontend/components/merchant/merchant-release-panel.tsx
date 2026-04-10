@@ -13,7 +13,13 @@ import {
 } from "wagmi";
 import { getAddress, recoverTypedDataAddress } from "viem";
 import { domainFromApi, releaseMessageFromApi } from "@/lib/release-typed-data";
-import { releaseSubmit, type IntentRecord } from "@/lib/payfi-api";
+import {
+  getReleaseSignatures,
+  releasePrepare,
+  releaseSubmit,
+  saveReleaseSignature,
+  type IntentRecord,
+} from "@/lib/payfi-api";
 import { releaseStoreKey, type StoredReleaseState } from "@/lib/release-local-state";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
 import { useI18n } from "@/lib/i18n";
@@ -44,7 +50,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       notConnected: "未连接",
       expectedMerchant: "合同商家地址",
       needUserSignFirst:
-        "本地尚未保存用户签名。请让用户先在用户工作台完成「用户签名」，并确保此处使用同一 intentId。",
+        "本地尚未检测到用户签名。你仍可先完成「商家签名」；随后回到用户工作台（同一 intentId）提交释放。",
       signAsMerchant: "商家签名",
       signing: "签名中…",
       submitRelease: "提交链上释放",
@@ -81,7 +87,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       notConnected: "未連接",
       expectedMerchant: "合同商家地址",
       needUserSignFirst:
-        "本地尚未儲存使用者簽名。請讓使用者先在使用者工作台完成「使用者簽名」，並確保此處使用同一 intentId。",
+        "本地尚未偵測到使用者簽名。你仍可先完成「商家簽名」；之後回到使用者工作台（同一 intentId）提交釋放。",
       signAsMerchant: "商家簽名",
       signing: "簽名中…",
       submitRelease: "提交鏈上釋放",
@@ -118,7 +124,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       notConnected: "Not connected",
       expectedMerchant: "Intent merchant",
       needUserSignFirst:
-        "No user signature in local storage yet. Have the user sign first on the User console with the same intentId.",
+        "No local user signature detected yet. You can still sign as merchant first, then submit release from the User console with the same intentId.",
       signAsMerchant: "Sign as merchant",
       signing: "Signing…",
       submitRelease: "Submit release",
@@ -177,16 +183,23 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       setReleasePrep(null);
       return;
     }
-    try {
-      const raw = window.localStorage.getItem(releaseStoreKey(id));
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as StoredReleaseState;
-      setUserSig(parsed.userSig ?? null);
-      setMerchantSig(parsed.merchantSig ?? null);
-      setReleasePrep(parsed.releasePrep ?? null);
-    } catch {
-      // ignore
-    }
+    void (async () => {
+      try {
+        const sigs = await getReleaseSignatures(id);
+        setUserSig(sigs.userSig);
+        setMerchantSig(sigs.merchantSig);
+      } catch {
+        // ignore API errors for signature fetch
+      }
+      try {
+        const raw = window.localStorage.getItem(releaseStoreKey(id));
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as StoredReleaseState;
+        setReleasePrep(parsed.releasePrep ?? null);
+      } catch {
+        // ignore
+      }
+    })();
   }, [id, mounted]);
 
   useEffect(() => {
@@ -234,11 +247,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
 
   const onSignMerchant = async () => {
     if (!intent || !address) {
-      setHint(text.needUserSignFirst);
-      return;
-    }
-    if (!userSig || !releasePrep) {
-      setHint(text.needUserSignFirst);
+      setHint(text.notConnected);
       return;
     }
     setHint(null);
@@ -248,7 +257,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       if (getAddress(address) !== getAddress(intent.merchant)) {
         throw new Error(`${text.walletMustBeMerchant} ${intent.merchant}. ${text.switchAccount}`);
       }
-      const prep = releasePrep;
+      const prep = releasePrep ?? (await releasePrepare(intent.intentId));
       const domain = domainFromApi(prep.typedData.domain as Record<string, unknown>);
       const message = releaseMessageFromApi(prep.typedData.message);
       const types = prep.typedData.types as Record<
@@ -271,7 +280,9 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       if (getAddress(recovered) !== getAddress(intent.merchant)) {
         throw new Error(text.merchantSigRecoverFail);
       }
+      setReleasePrep(prep);
       setMerchantSig(sig);
+      await saveReleaseSignature(intent.intentId, "merchant", sig);
     } catch (e) {
       setHint(e instanceof Error ? e.message : String(e));
     } finally {
@@ -280,14 +291,20 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
   };
 
   const onSubmitRelease = async () => {
-    if (!intent || !userSig || !merchantSig) {
+    if (!intent) {
       setHint(text.needBothSigs);
       return;
     }
     setHint(null);
     setBusy("submit-release");
     try {
-      await releaseSubmit(intent.intentId, userSig, merchantSig);
+      const sigs = await getReleaseSignatures(intent.intentId);
+      const submitUserSig = userSig ?? sigs.userSig;
+      const submitMerchantSig = merchantSig ?? sigs.merchantSig;
+      if (!submitUserSig || !submitMerchantSig) {
+        throw new Error(text.needBothSigs);
+      }
+      await releaseSubmit(intent.intentId, submitUserSig, submitMerchantSig);
       clearLocal();
       await onIntentRefresh();
     } catch (e) {
@@ -453,7 +470,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={Boolean(busy) || onWrongChain || !userSig || !releasePrep}
+          disabled={Boolean(busy) || onWrongChain}
           onClick={() => void onSignMerchant()}
           className="payfi-btn-secondary text-xs"
         >

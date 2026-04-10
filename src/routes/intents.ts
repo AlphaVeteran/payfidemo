@@ -59,6 +59,11 @@ function anchorFromBody(b: CreateIntentBody) {
   };
 }
 
+function clearReleaseSignatures(row: IntentRecord) {
+  row.userSig = undefined;
+  row.merchantSig = undefined;
+}
+
 router.post("/", async (req, res) => {
   const b = req.body as CreateIntentBody;
   if (
@@ -98,6 +103,8 @@ router.post("/", async (req, res) => {
     createdAt: new Date().toISOString(),
     paymentUrl: undefined,
     hskPaymentReqId: undefined,
+    userSig: undefined,
+    merchantSig: undefined,
   };
   const createdEmitPayload = { intentId, escrowId: null, ...record.anchor };
   if (isPersistenceEnabled() && getPgPool()) {
@@ -383,6 +390,7 @@ router.post("/:intentId/release/prepare", async (req, res) => {
       row.releaseNonce = snap.releaseNonce;
       row.releaseCount = snap.releaseCount;
       row.releasedTotal = snap.releasedTotal;
+      clearReleaseSignatures(row);
       if (row.releasedTotal === row.amountTotal) {
         row.status = "settled";
       } else if (row.releaseCount > 0) {
@@ -431,6 +439,50 @@ router.post("/:intentId/release/prepare", async (req, res) => {
   });
 });
 
+router.get("/:intentId/release/signatures", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({
+    intentId: row.intentId,
+    userSig: row.userSig ?? null,
+    merchantSig: row.merchantSig ?? null,
+  });
+});
+
+router.post("/:intentId/release/signatures", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  const { role, signature } = req.body as { role?: "user" | "merchant"; signature?: string };
+  if ((role !== "user" && role !== "merchant") || !signature) {
+    res.status(400).json({ error: "role(user|merchant) and signature required" });
+    return;
+  }
+  const sig = signature.trim();
+  if (!/^0x[0-9a-fA-F]{130}$/i.test(sig)) {
+    res.status(400).json({ error: "invalid signature format" });
+    return;
+  }
+  if (role === "user") {
+    row.userSig = sig;
+    row.merchantSig = undefined;
+  } else {
+    row.merchantSig = sig;
+  }
+  await intentStore.saveIntent(row);
+  res.json({
+    ok: true,
+    intentId: row.intentId,
+    userSig: row.userSig ?? null,
+    merchantSig: row.merchantSig ?? null,
+  });
+});
+
 router.post("/:intentId/release/submit", async (req, res) => {
   const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
@@ -441,7 +493,9 @@ router.post("/:intentId/release/submit", async (req, res) => {
     userSig?: string;
     merchantSig?: string;
   };
-  if (!userSig || !merchantSig) {
+  const finalUserSig = userSig ?? row.userSig;
+  const finalMerchantSig = merchantSig ?? row.merchantSig;
+  if (!finalUserSig || !finalMerchantSig) {
     res.status(400).json({ error: "userSig and merchantSig required" });
     return;
   }
@@ -480,6 +534,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
         row.releaseCount = snap0.releaseCount;
         row.releasedTotal = snap0.releasedTotal;
         row.releaseNonce = snap0.releaseNonce;
+        clearReleaseSignatures(row);
         if (row.releasedTotal === row.amountTotal) {
           row.status = "settled";
         } else if (row.releaseCount > 0) {
@@ -506,7 +561,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
         address: escrowAddr,
         abi: payFiEscrowAbi,
         functionName: "releaseBySignatures",
-        args: [eid, per, userSig as Hex, merchantSig as Hex],
+        args: [eid, per, finalUserSig as Hex, finalMerchantSig as Hex],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {
@@ -526,6 +581,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
       row.releasedTotal = snap.releasedTotal;
       row.releaseNonce = snap.releaseNonce;
       row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
+      clearReleaseSignatures(row);
       await intentStore.saveIntent(row);
 
       await settlementAdapter.emit("SETTLEMENT_RELEASED", {
@@ -565,6 +621,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
     row.releaseCount += 1;
     row.releasedTotal = (released + per).toString();
     row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
+    clearReleaseSignatures(row);
     const txHashDemo = `0x${"ab".repeat(32)}`;
     const releasedPayload = {
       intentId: row.intentId,

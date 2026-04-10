@@ -38,6 +38,8 @@ export interface IntentRecord {
   paymentUrl?: string;
   hskPaymentReqId?: string;
   hskCartMandateId?: string;
+  userSig?: string;
+  merchantSig?: string;
 }
 
 export interface CreateIntentBody {

@@ -28,9 +28,11 @@ import {
   createIntent,
   fundingHint,
   getIntent,
+  getReleaseSignatures,
   postFundingTx,
   refundIntent,
   releasePrepare,
+  saveReleaseSignature,
   releaseSubmit,
   type IntentRecord,
   type ReleasePrepareResponse,
@@ -115,10 +117,10 @@ function parseCycleHoursToDurationSeconds(hoursStr: string): number {
   return sec;
 }
 
-/** Base Sepolia（Circle 测试 USDC）创建意向的默认表单：10 USDC、均分 5 次释放、链上周期 2 小时 */
+/** Base Sepolia（Circle 测试 USDC）创建意向的默认表单：10 USDC、均分 5 次释放、链上周期 1 小时 */
 const BASE_SEPOLIA_DEFAULT_USDC_TOTAL = "10";
 const BASE_SEPOLIA_DEFAULT_MAX_RELEASES = "5";
-const BASE_SEPOLIA_DEFAULT_CYCLE_HOURS = "2";
+const BASE_SEPOLIA_DEFAULT_CYCLE_HOURS = "1";
 
 const defaultCreateBodyStatic = {
   merchant: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
@@ -220,6 +222,8 @@ export default function PayFiDemo() {
       signAsMerchant: "商家签名",
       submitting: "提交中…",
       submitRelease: "提交释放",
+      waitingMerchantSig: "已完成用户签名，等待商家签名后即可提交释放。",
+      readySubmitRelease: "用户与商家签名均已就绪，可提交释放。",
       refundRemaining: "4) 剩余金额退回",
       refundRemainingBtn: "剩余金额退回",
       refunding: "退回中…",
@@ -321,6 +325,8 @@ export default function PayFiDemo() {
       signAsMerchant: "商家簽名",
       submitting: "提交中…",
       submitRelease: "提交釋放",
+      waitingMerchantSig: "已完成使用者簽名，等待商家簽名後即可提交釋放。",
+      readySubmitRelease: "使用者與商家簽名均已就緒，可提交釋放。",
       refundRemaining: "4) 退回剩餘金額",
       refundRemainingBtn: "退回剩餘金額",
       refunding: "退回中…",
@@ -422,6 +428,8 @@ export default function PayFiDemo() {
       signAsMerchant: "Sign as merchant",
       submitting: "Submitting…",
       submitRelease: "Submit release",
+      waitingMerchantSig: "User signature is ready. Waiting for merchant signature before submit.",
+      readySubmitRelease: "Both user and merchant signatures are ready. You can submit release now.",
       refundRemaining: "4) Return Remaining Funds",
       refundRemainingBtn: "Return Remaining Funds",
       refunding: "Refunding…",
@@ -521,19 +529,21 @@ export default function PayFiDemo() {
   const refreshIntent = useCallback(async () => {
     if (!intentId.trim()) {
       setIntent(null);
+      setUserSig(null);
+      setMerchantSig(null);
       return;
     }
     setError(null);
-    const row = await getIntent(intentId.trim());
-    setIntent(row);
     const id = intentId.trim();
+    const [row, sigs] = await Promise.all([getIntent(id), getReleaseSignatures(id)]);
+    setIntent(row);
+    setUserSig(sigs.userSig);
+    setMerchantSig(sigs.merchantSig);
     if (typeof window !== "undefined" && id) {
       try {
         const raw = window.localStorage.getItem(releaseStoreKey(id));
         if (!raw) return;
         const parsed = JSON.parse(raw) as StoredReleaseState;
-        setUserSig(parsed.userSig ?? null);
-        setMerchantSig(parsed.merchantSig ?? null);
         setReleasePrep(parsed.releasePrep ?? null);
       } catch {
         // ignore malformed cache
@@ -776,6 +786,7 @@ export default function PayFiDemo() {
       if (getAddress(recovered) !== getAddress(intent.user)) {
         throw new Error(text.userSigRecoverFail);
       }
+      await saveReleaseSignature(intent.intentId, "user", sig);
       setUserSig(sig);
       setMerchantSig(null);
       setReleasePrep(prep);
@@ -796,7 +807,7 @@ export default function PayFiDemo() {
   };
 
   const onReleaseSubmit = async () => {
-    if (!intent || !userSig || !merchantSig) {
+    if (!intent) {
       setError(text.needBothSigs);
       return;
     }
@@ -804,7 +815,13 @@ export default function PayFiDemo() {
     setReleaseHint(null);
     setBusy("submit-release");
     try {
-      const res = await releaseSubmit(intent.intentId, userSig, merchantSig);
+      const sigs = await getReleaseSignatures(intent.intentId);
+      const submitUserSig = userSig ?? sigs.userSig;
+      const submitMerchantSig = merchantSig ?? sigs.merchantSig;
+      if (!submitUserSig || !submitMerchantSig) {
+        throw new Error(text.needBothSigs);
+      }
+      const res = await releaseSubmit(intent.intentId, submitUserSig, submitMerchantSig);
       setReleaseResult(res);
       clearLocalReleaseState(intent.intentId);
       await refreshIntent();
@@ -906,7 +923,7 @@ export default function PayFiDemo() {
       : null;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 pb-12 pt-6 sm:px-6">
+    <main className="mx-auto flex min-h-screen w-full max-w-[28rem] flex-col gap-6 px-4 pb-12 pt-6 sm:max-w-3xl sm:px-6">
       <header className="payfi-card space-y-4 p-5">
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
@@ -1351,13 +1368,18 @@ export default function PayFiDemo() {
               </button>
               <button
                 type="button"
-                disabled={Boolean(busy)}
+                disabled={Boolean(busy) || !userSig || !merchantSig}
                 onClick={() => void onReleaseSubmit()}
                 className="payfi-btn-primary"
               >
                 {busy === "submit-release" ? text.submitting : text.submitRelease}
               </button>
             </div>
+            {userSig && (
+              <p className="text-xs text-zinc-500">
+                {merchantSig ? text.readySubmitRelease : text.waitingMerchantSig}
+              </p>
+            )}
             {userSig && !merchantSig && (
               <div className="rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-3 text-sm text-violet-100/90">
                 <Link

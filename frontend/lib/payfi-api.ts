@@ -32,6 +32,8 @@ export type IntentRecord = {
   };
   /** 创建 intent 时可选；GET 返回中可能包含（不含 webhookSecret） */
   webhookUrl?: string;
+  userSig?: string;
+  merchantSig?: string;
 };
 
 export async function createIntent(body: Record<string, unknown>): Promise<{
@@ -145,6 +147,37 @@ export async function releaseSubmit(
   );
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || data.detail || "release submit failed");
+  return data;
+}
+
+export async function getReleaseSignatures(intentId: string): Promise<{
+  intentId: string;
+  userSig: `0x${string}` | null;
+  merchantSig: `0x${string}` | null;
+}> {
+  const res = await fetch(
+    `${apiRoot()}/intents/${encodeURIComponent(intentId)}/release/signatures`,
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "get release signatures failed");
+  return data;
+}
+
+export async function saveReleaseSignature(
+  intentId: string,
+  role: "user" | "merchant",
+  signature: `0x${string}`,
+): Promise<{ ok: boolean; userSig: `0x${string}` | null; merchantSig: `0x${string}` | null }> {
+  const res = await fetch(
+    `${apiRoot()}/intents/${encodeURIComponent(intentId)}/release/signatures`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, signature }),
+    },
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "save release signature failed");
   return data;
 }
 

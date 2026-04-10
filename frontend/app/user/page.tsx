@@ -35,7 +35,7 @@ export default function UserPage() {
   }[locale];
   return (
     <div>
-      <div className="mx-auto w-full max-w-3xl px-4 pt-6 pr-28 sm:px-6 sm:pr-36">
+      <div className="mx-auto w-full max-w-[28rem] px-4 pt-6 pr-20 sm:max-w-3xl sm:px-6 sm:pr-36">
         <div className="grid gap-3 sm:grid-cols-2">
           <Link
             href="/"
@@ -56,7 +56,11 @@ export default function UserPage() {
         </div>
       </div>
       <Suspense
-        fallback={<main className="mx-auto max-w-3xl px-4 py-8 text-sm text-zinc-500">{text.loading}</main>}
+        fallback={
+          <main className="mx-auto w-full max-w-[28rem] px-4 py-8 text-sm text-zinc-500 sm:max-w-3xl">
+            {text.loading}
+          </main>
+        }
       >
         <PayFiDemo />
       </Suspense>

@@ -265,6 +265,7 @@ curl -sS "$BASE/api/payfi/v1/intents" | jq .
 
 ## 文档
 
+- [系统栈架构（Next / wagmi / viem / API / DB / HashKey / Webhook / Outbox）](docs/system-architecture-stack.md) · [动态总览图 HTML](docs/payfidemo_architecture_overview_en.html)
 - [架构说明](docs/payfi-escrow-architecture.md)
 - [幂等 / Webhook](docs/payment-flow-idempotency-replay-clock-skew.md)
 - [Webhook 本地自测（无链 / Base Sepolia）](docs/webhook-local-selftest.md)

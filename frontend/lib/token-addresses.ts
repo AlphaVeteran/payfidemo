@@ -9,7 +9,7 @@ export const BASE_SEPOLIA_USDC_DECIMALS = 6 as const;
 
 /** 与 `.env.example` 对齐；可被 `NEXT_PUBLIC_USDC_CONTRACT` 覆盖 */
 export const HASHKEY_TESTNET_USDC_DEFAULT =
-  "0x79AEc4EeA31D50792F61D1Ca0733C18c89524C9e" as const;
+  "0x8FE3cB719Ee4410E236Cd6b72ab1fCDC06eF53c6" as const;
 
 /**
  * 本地 Anvil `LocalAnvilBootstrap` 首次部署的 MockERC20 确定性地址（chainId 31337）。
