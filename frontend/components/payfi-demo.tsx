@@ -17,6 +17,7 @@ import {
   erc20Abi,
   formatUnits,
   getAddress,
+  isHash,
   parseUnits,
   recoverTypedDataAddress,
   type PublicClient,
@@ -45,7 +46,9 @@ import {
   type ReleasePrepareResponse,
 } from "@/lib/payfi-api";
 import { domainFromApi, releaseMessageFromApi } from "@/lib/release-typed-data";
+import HashkeyFundingAlternative from "@/components/shared/hashkey-funding-alternative";
 import DualSignIntentFacts from "@/components/shared/dual-sign-intent-facts";
+import PayFiLogo from "@/components/ui/payfi-logo";
 import { releaseStoreKey, type StoredReleaseState } from "@/lib/release-local-state";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
 import { blockExplorerTxUrl } from "@/lib/explorer";
@@ -125,7 +128,7 @@ function parseCycleHoursToDurationSeconds(hoursStr: string): number {
   return sec;
 }
 
-/** Base Sepolia（Circle 测试 USDC）创建意向的默认表单：10 USDC、均分 5 期放款、链上周期 1 小时 */
+/** Base Sepolia（Circle 测试 USDC）新建意向的默认表单：10 USDC、均分 5 期放款、链上周期 1 小时 */
 const BASE_SEPOLIA_DEFAULT_USDC_TOTAL = "10";
 const BASE_SEPOLIA_DEFAULT_MAX_RELEASES = "5";
 const BASE_SEPOLIA_DEFAULT_CYCLE_HOURS = "1";
@@ -133,7 +136,7 @@ const BASE_SEPOLIA_DEFAULT_CYCLE_HOURS = "1";
 const defaultCreateBodyStatic = {
   merchant: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   user: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  /** Anvil Mock 18 decimals；Base Sepolia 创建时使用用户输入 USDC，不经此默认值 */
+  /** Anvil Mock 18 decimals；Base Sepolia 新建时使用用户输入 USDC，不经此默认值 */
   amountTotal: "1000000000",
   amountPerLesson: "100000000",
   maxReleases: 10,
@@ -177,12 +180,12 @@ export default function PayFiDemo() {
       walletHint:
         "列表来自钱包的 EIP-6963 广播；点选即可连接。若某扩展明确报告不可用，会显示「未检测到」并禁用。",
       walletUnavailable: "未检测到",
-      createContractIntent: "1) 创建托管合同意向",
-      creating: "创建中…",
-      createIntent: "创建合同意向",
+      createContractIntent: "1) 新建托管合同意向",
+      creating: "新建中…",
+      createIntent: "新建合同意向",
       intentIdLabel: "合同意向编号（intentId）",
-      intentPlaceholder: "创建成功后自动填入，或手动粘贴合同意向编号",
-      refreshIntent: "刷新合同意向",
+      intentPlaceholder: "新建成功后自动填入，或手动粘贴合同意向编号",
+      refreshIntent: "查询合同意向",
       funding: "2) 资金托管",
       release: "3) 链上托管分期放款（双签）",
       disconnect: "断开",
@@ -202,11 +205,11 @@ export default function PayFiDemo() {
       userSigRecoverFail: "用户签名恢复地址与合同意向用户不一致。",
       merchantSigRecoverFail: "商家签名恢复地址与合同意向商家不一致。",
       needUserSigFirst:
-        "请先完成用户签名。若你开了新窗口，请粘贴同一合同意向编号（intentId）并点击“刷新合同意向”。",
+        "请先完成用户签名。若你开了新窗口，请粘贴同一合同意向编号（intentId）并点击“查询合同意向”。",
       signUserFirst: "请先以用户身份签名（同一份 prepare payload）。",
       needBothSigs: "需要用户和商家双方签名。",
       nonceDesyncHint:
-        "检测到 releaseNonce 不一致：链上状态已变化。已清空旧签名，请点击“刷新合同意向”后重新执行 用户签名 -> 商家签名 -> 提交分期放款。",
+        "检测到 releaseNonce 不一致：链上状态已变化。已清空旧签名，请点击“查询合同意向”后重新执行 用户签名 -> 商家签名 -> 提交分期放款。",
       baseSepoliaCreateHint:
         "默认使用 Circle Base Sepolia 测试 USDC（{decimals} decimals）。演示链上托管分期放款：托管总额将均分为「分期期数」笔；「托管周期」对应链上 escrow 到期前可放款/退款的时间窗（秒级精度由小时换算）。商家地址见下方栏（默认与 NEXT_PUBLIC_DEMO_MERCHANT 一致；双签需对应私钥）。",
       merchantAddressLabel: "商家地址",
@@ -251,26 +254,27 @@ export default function PayFiDemo() {
       refundTarget: "退回地址",
       refundAmount: "退回金额",
       refundDone: "已发起退款交易。",
-      webhookUrlLabel: "Webhook URL（可选）",
-      webhookUrlPlaceholder: "https://example.com/hooks/payfi 或本地隧道 HTTPS",
-      webhookSecretLabel: "Webhook Secret（可选，用于 X-PayFi-Signature）",
-      webhookSecretPlaceholder: "与商户服务端校验 HMAC 的密钥",
-      webhookHint:
-        "入金、分期放款、退款时服务端会向该 URL POST JSON；需公网 HTTPS 或隧道。超时与行为见 API 的 WEBHOOK_TIMEOUT_MS。",
-      networkBannerLine: "PayFi · {chain} · Chain ID {id}",
-      hspManualLink: "HSP 用户手册（HashFans）",
-      stepCreate: "创建意向",
+      stepCreate: "新建意向",
       stepFund: "链上入金",
       stepRelease: "分期放款",
       stepRefundNav: "剩余退回",
       stepRefund: "退款",
-      wizardAdvanced: "高级选项（Webhook）",
-      gatewayOptionalTitle: "可选：HashKey Gateway 收银台（加分演示）",
+      gatewayOptionalTitle: "HashKey Gateway 收银台",
       gatewayOpen: "打开收银台",
+      fundEitherOrNote: "以下为与「授权代币 → 存入托管」二选一的入金路径",
+      hspAlternativeCardTitle: "HashKey 收银台与支付登记",
+      hspNoPaymentUrl: "当前意向未返回收银台链接（新建时网关可能失败），可直接在下方登记交易哈希。",
       hintCardTitle: "操作提示",
       explorerViewTx: "在区块浏览器查看交易",
+      hspRegisterTitle: "已在收银台 / 外部完成支付？登记交易哈希",
+      hspRegisterHint:
+        "在收银台或外部钱包完成链上支付后，将 Blockscout 上**支付成功**的交易哈希粘贴并登记（同 API「POST .../funding/tx」）。若已通过上方按钮完成存入，请勿重复登记。",
+      registerTxPlaceholder: "0x…（66 字符）",
+      registerTxSubmit: "登记托管入金",
+      registerTxBusy: "登记中…",
+      invalidTxHash: "请输入有效的交易哈希（0x + 64 位十六进制）。",
       stepWrongContext: "当前步骤与合同状态不一致，已为你切换到合适步骤。",
-      stepNeedIntentFirst: "请先创建或加载合同意向（intentId）。",
+      stepNeedIntentFirst: "请先新建或加载合同意向（intentId）。",
       stepNotFundedYet: "请先完成「链上入金」后再进行链上托管分期放款（双签）。",
       stepAlreadyFunded: "当前合同已不在「待支付」状态。若托管尚未完成，请查看上一步；否则请在本步继续分期放款或退款。",
     },
@@ -283,12 +287,12 @@ export default function PayFiDemo() {
       walletHint:
         "清單來自錢包的 EIP-6963 廣播；點選即可連接。若某擴充明確回報不可用，會顯示「未檢測到」並停用。",
       walletUnavailable: "未檢測到",
-      createContractIntent: "1) 建立託管合同意向",
-      creating: "建立中…",
-      createIntent: "建立合同意向",
+      createContractIntent: "1) 新建託管合同意向",
+      creating: "新建中…",
+      createIntent: "新建合同意向",
       intentIdLabel: "合同意向編號（intentId）",
-      intentPlaceholder: "建立成功後自動填入，或手動貼上合同意向編號",
-      refreshIntent: "刷新合同意向",
+      intentPlaceholder: "新建成功後自動填入，或手動貼上合同意向編號",
+      refreshIntent: "查詢合同意向",
       funding: "2) 資金託管",
       release: "3) 鏈上託管分期放款（雙簽）",
       disconnect: "斷開",
@@ -308,11 +312,11 @@ export default function PayFiDemo() {
       userSigRecoverFail: "使用者簽名恢復地址與合同意向使用者不一致。",
       merchantSigRecoverFail: "商家簽名恢復地址與合同意向商家不一致。",
       needUserSigFirst:
-        "請先完成使用者簽名。若你開了新視窗，請貼上同一合同意向編號（intentId）並點擊「刷新合同意向」。",
+        "請先完成使用者簽名。若你開了新視窗，請貼上同一合同意向編號（intentId）並點擊「查詢合同意向」。",
       signUserFirst: "請先以使用者身分簽名（同一份 prepare payload）。",
       needBothSigs: "需要使用者與商家雙方簽名。",
       nonceDesyncHint:
-        "偵測到 releaseNonce 不一致：鏈上狀態已變化。已清空舊簽名，請點擊「刷新合同意向」後重新執行 使用者簽名 -> 商家簽名 -> 提交分期放款。",
+        "偵測到 releaseNonce 不一致：鏈上狀態已變化。已清空舊簽名，請點擊「查詢合同意向」後重新執行 使用者簽名 -> 商家簽名 -> 提交分期放款。",
       baseSepoliaCreateHint:
         "預設使用 Circle Base Sepolia 測試 USDC（{decimals} decimals）。演示鏈上託管分期放款：託管總額將均分為「分期期數」筆；「託管週期」對應鏈上 escrow 到期前可放款/退款的時間窗（秒級精度由小時換算）。商家地址見下方欄（預設與 NEXT_PUBLIC_DEMO_MERCHANT 一致；雙簽需對應私鑰）。",
       merchantAddressLabel: "商家地址",
@@ -357,26 +361,27 @@ export default function PayFiDemo() {
       refundTarget: "退回地址",
       refundAmount: "退回金額",
       refundDone: "已送出退款交易。",
-      webhookUrlLabel: "Webhook URL（選填）",
-      webhookUrlPlaceholder: "https://example.com/hooks/payfi 或本機隧道 HTTPS",
-      webhookSecretLabel: "Webhook Secret（選填，用於 X-PayFi-Signature）",
-      webhookSecretPlaceholder: "與商戶端驗證 HMAC 的金鑰",
-      webhookHint:
-        "入金、分期放款、退款時服務端會向該 URL POST JSON；需公網 HTTPS 或隧道。逾時見 API 的 WEBHOOK_TIMEOUT_MS。",
-      networkBannerLine: "PayFi · {chain} · Chain ID {id}",
-      hspManualLink: "HSP 使用手冊（HashFans）",
-      stepCreate: "建立意向",
+      stepCreate: "新建意向",
       stepFund: "鏈上入金",
       stepRelease: "分期放款",
       stepRefundNav: "退回剩餘",
       stepRefund: "退款",
-      wizardAdvanced: "進階選項（Webhook）",
-      gatewayOptionalTitle: "可選：HashKey Gateway 收銀台（加分演示）",
+      gatewayOptionalTitle: "HashKey Gateway 收銀台",
       gatewayOpen: "開啟收銀台",
+      fundEitherOrNote: "以下為與「授權代幣 → 存入託管」二選一的入金路徑",
+      hspAlternativeCardTitle: "HashKey 收銀台與支付登記",
+      hspNoPaymentUrl: "目前意向未回傳收銀台連結（新建時網關可能失敗），可直接於下方登記交易雜湊。",
       hintCardTitle: "操作提示",
       explorerViewTx: "在區塊瀏覽器查看交易",
+      hspRegisterTitle: "已在收銀台 / 外部完成支付？登記交易雜湊",
+      hspRegisterHint:
+        "在收銀台或外部錢包完成鏈上支付後，將 Blockscout 上**支付成功**的交易雜湊貼上並登記（同 API「POST .../funding/tx」）。若已透過上方按鈕完成存入，請勿重複登記。",
+      registerTxPlaceholder: "0x…（66 字元）",
+      registerTxSubmit: "登記託管入金",
+      registerTxBusy: "登記中…",
+      invalidTxHash: "請輸入有效的交易雜湊（0x + 64 位十六進位）。",
       stepWrongContext: "目前步驟與合同狀態不一致，已為你切換到合適步驟。",
-      stepNeedIntentFirst: "請先建立或載入合同意向（intentId）。",
+      stepNeedIntentFirst: "請先新建或載入合同意向（intentId）。",
       stepNotFundedYet: "請先完成「鏈上入金」後再進行鏈上託管分期放款（雙簽）。",
       stepAlreadyFunded: "目前合同已不在「待支付」狀態。若託管尚未完成，請查看上一步；否則請在本步繼續分期放款或退款。",
     },
@@ -389,12 +394,12 @@ export default function PayFiDemo() {
       walletHint:
         "Wallets are discovered via EIP-6963. Click to connect. If a wallet reports unavailable, it is disabled.",
       walletUnavailable: "Unavailable",
-      createContractIntent: "1) Create Escrow Contract Intent",
+      createContractIntent: "1) New Escrow Contract Intent",
       creating: "Creating…",
-      createIntent: "Create Contract Intent",
+      createIntent: "New Contract Intent",
       intentIdLabel: "Contract Intent ID (intentId)",
-      intentPlaceholder: "Auto-filled after creation, or paste a Contract Intent ID",
-      refreshIntent: "Refresh Contract Intent",
+      intentPlaceholder: "Auto-filled after a new intent succeeds, or paste a Contract Intent ID",
+      refreshIntent: "Query Contract Intent",
       funding: "2) Fund Escrow",
       release: "3) On-chain escrow installment (dual-sign)",
       disconnect: "Disconnect",
@@ -414,11 +419,11 @@ export default function PayFiDemo() {
       userSigRecoverFail: "Recovered user signature does not match contract intent user.",
       merchantSigRecoverFail: "Recovered merchant signature does not match contract intent merchant.",
       needUserSigFirst:
-        "User signature required first. If in a new window, paste the same Contract Intent ID and click Refresh Contract Intent.",
+        "User signature required first. If in a new window, paste the same Contract Intent ID and click Query Contract Intent.",
       signUserFirst: "Sign as user first (same prepare payload).",
       needBothSigs: "Both user and merchant signatures are required.",
       nonceDesyncHint:
-        "Detected releaseNonce desync: on-chain state changed. Cleared old signatures. Click Refresh Contract Intent, then sign as user -> sign as merchant -> submit installment disbursement again.",
+        "Detected releaseNonce desync: on-chain state changed. Cleared old signatures. Click Query Contract Intent, then sign as user -> sign as merchant -> submit installment disbursement again.",
       baseSepoliaCreateHint:
         "On-chain escrow installment disbursement demo. Uses Circle Base Sepolia test USDC ({decimals} decimals). Total escrow is split evenly by installment count. Cycle hours map to on-chain escrow duration. Set merchant below (defaults to NEXT_PUBLIC_DEMO_MERCHANT).",
       merchantAddressLabel: "Merchant address",
@@ -464,26 +469,28 @@ export default function PayFiDemo() {
       refundTarget: "Return Address",
       refundAmount: "Return Amount",
       refundDone: "Refund transaction submitted.",
-      webhookUrlLabel: "Webhook URL (optional)",
-      webhookUrlPlaceholder: "https://example.com/hooks/payfi or tunnel HTTPS URL",
-      webhookSecretLabel: "Webhook Secret (optional, for X-PayFi-Signature)",
-      webhookSecretPlaceholder: "Shared secret for HMAC verification",
-      webhookHint:
-        "The API POSTs JSON on fund, installment disbursement, and refund. Use a public HTTPS URL or a tunnel. See WEBHOOK_TIMEOUT_MS on the API.",
-      networkBannerLine: "PayFi · {chain} · Chain ID {id}",
-      hspManualLink: "HSP user manual (HashFans)",
-      stepCreate: "Create intent",
+      stepCreate: "New intent",
       stepFund: "Fund on-chain",
       stepRelease: "Installment disbursement",
       stepRefundNav: "Refund remainder",
       stepRefund: "Refund",
-      wizardAdvanced: "Advanced (Webhook)",
-      gatewayOptionalTitle: "Optional: HashKey Gateway checkout (bonus demo)",
+      gatewayOptionalTitle: "HashKey Gateway checkout",
       gatewayOpen: "Open checkout",
+      fundEitherOrNote: "Alternative to Approve + Deposit above — pick one funding path",
+      hspAlternativeCardTitle: "HashKey checkout & tx registration",
+      hspNoPaymentUrl:
+        "No checkout URL on this intent (gateway may have failed when the intent was added). You can still register a tx hash below.",
       hintCardTitle: "Notices",
       explorerViewTx: "View transaction on explorer",
+      hspRegisterTitle: "Paid via checkout or another wallet? Register tx hash",
+      hspRegisterHint:
+        "After paying on checkout or another wallet, paste the successful tx hash from the explorer and register (same as POST .../funding/tx). If you already deposited with the buttons above, do not register again.",
+      registerTxPlaceholder: "0x… (66 chars)",
+      registerTxSubmit: "Register funding tx",
+      registerTxBusy: "Registering…",
+      invalidTxHash: "Enter a valid tx hash (0x + 64 hex digits).",
       stepWrongContext: "This step does not match the current intent state; switched to the appropriate step.",
-      stepNeedIntentFirst: "Create or load an intent (intentId) first.",
+      stepNeedIntentFirst: "Add a new intent or load an intent (intentId) first.",
       stepNotFundedYet:
         "Complete on-chain funding first, then proceed with on-chain escrow installment disbursement (dual-sign).",
       stepAlreadyFunded:
@@ -526,6 +533,7 @@ export default function PayFiDemo() {
   const [userSig, setUserSig] = useState<`0x${string}` | null>(null);
   const [merchantSig, setMerchantSig] = useState<`0x${string}` | null>(null);
   const [lastTx, setLastTx] = useState<string | null>(null);
+  const [registerFundingTxInput, setRegisterFundingTxInput] = useState("");
   const [releaseResult, setReleaseResult] = useState<Record<string, unknown> | null>(
     null,
   );
@@ -544,18 +552,6 @@ export default function PayFiDemo() {
   const [createMerchantAddress, setCreateMerchantAddress] = useState(
     defaultDemoMerchantAddress,
   );
-  const [webhookUrl, setWebhookUrl] = useState("");
-  const [webhookSecret, setWebhookSecret] = useState("");
-
-  const payfiApiDisplay = useMemo(() => {
-    const base =
-      typeof process.env.NEXT_PUBLIC_PAYFI_API_URL === "string" &&
-      process.env.NEXT_PUBLIC_PAYFI_API_URL.length > 0
-        ? process.env.NEXT_PUBLIC_PAYFI_API_URL.replace(/\/$/, "")
-        : "http://127.0.0.1:8787";
-    return base;
-  }, []);
-
   const refreshIntent = useCallback(async () => {
     if (!intentId.trim()) {
       setIntent(null);
@@ -723,14 +719,6 @@ export default function PayFiDemo() {
           durationSeconds,
         };
       }
-      const wUrl = webhookUrl.trim();
-      if (wUrl) {
-        body = { ...body, webhookUrl: wUrl };
-        const wSec = webhookSecret.trim();
-        if (wSec) {
-          body = { ...body, webhookSecret: wSec };
-        }
-      }
       const { intentId: id } = await createIntent(body);
       setIntentId(id);
       setUserSig(null);
@@ -788,6 +776,27 @@ export default function PayFiDemo() {
       if (receipt.status !== "success") throw new Error(text.depositReverted);
       await postFundingTx(intent.intentId, hash);
       setLastTx(hash);
+      await refreshIntent();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onRegisterFundingTxPaste = async () => {
+    if (!intent) return;
+    setError(null);
+    const raw = registerFundingTxInput.trim();
+    if (!isHash(raw)) {
+      setError(text.invalidTxHash);
+      return;
+    }
+    setBusy("register-tx");
+    try {
+      await postFundingTx(intent.intentId, raw);
+      setLastTx(raw);
+      setRegisterFundingTxInput("");
       await refreshIntent();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -936,8 +945,6 @@ export default function PayFiDemo() {
     setWizardStep(derivedWizardStep);
   }, [derivedWizardStep]);
 
-  const chainLabel = chainDisplayName(targetChainId, locale);
-
   const canSelectWizardStep = (step: number) => {
     if (step === 1) return true;
     if (!intent?.intentId?.trim()) return false;
@@ -973,31 +980,14 @@ export default function PayFiDemo() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-[28rem] flex-col gap-6 px-4 pb-12 pt-6 sm:max-w-3xl sm:px-6">
       <header className="payfi-card space-y-4 p-5">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-            <span className="payfi-title-gradient">PayFi</span>
-            <span className="text-zinc-100"> {text.userWorkbench}</span>
-          </h1>
-          <p className="mt-1 text-xs font-medium text-sky-300/90">
-            {text.networkBannerLine
-              .replace("{chain}", chainLabel)
-              .replace("{id}", String(targetChainId))}
-          </p>
-          {targetChainId === HASHKEY_TESTNET_CHAIN_ID && (
-            <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-              <a
-                href="https://hashfans.io/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sky-400 underline-offset-2 hover:underline"
-              >
-                {text.hspManualLink}
-              </a>
-            </p>
-          )}
-          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-            API <span className="payfi-code">{payfiApiDisplay}</span>
-          </p>
+        <div className="flex items-start gap-3">
+          <PayFiLogo />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              <span className="payfi-title-gradient">PayFi</span>
+              <span className="payfi-title-gradient"> {text.userWorkbench}</span>
+            </h1>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!effectiveIsConnected ? (
@@ -1154,156 +1144,117 @@ export default function PayFiDemo() {
       </nav>
 
       {wizardStep === 1 && (
-        <section className="payfi-card space-y-4 p-5">
-          <h2 className="text-base font-semibold text-zinc-100">{text.createContractIntent}</h2>
-          {isPublicUsdcTestnet(targetChainId) && (
-            <>
-              <Field label={text.merchantAddressLabel}>
+        <div className="space-y-4">
+          <section className="payfi-card space-y-4 p-5">
+            <Field label={text.intentIdLabel}>
+              <p className="text-xs leading-relaxed text-zinc-500">{text.intentPlaceholder}</p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => void refreshIntent()}
+                  className="payfi-btn-ghost whitespace-nowrap sm:shrink-0"
+                >
+                  {text.refreshIntent}
+                </button>
                 <input
-                  className="payfi-input font-mono text-xs"
-                  type="text"
+                  className="payfi-input min-w-0 flex-1 font-mono text-xs"
+                  value={intentId}
+                  onChange={(e) => setIntentId(e.target.value)}
                   spellCheck={false}
                   autoComplete="off"
-                  value={createMerchantAddress}
-                  onChange={(e) => setCreateMerchantAddress(e.target.value)}
-                  placeholder={text.merchantAddressPlaceholder}
                 />
-              </Field>
-              {targetChainId === baseSepolia.id && (
-                <>
-                  <p className="text-xs leading-relaxed text-zinc-500">
-                    {text.baseSepoliaCreateHint.replace(
-                      "{decimals}",
-                      String(demoUsdcDecimals(targetChainId)),
-                    )}
-                  </p>
-                  <Field label={text.usdcAddressLabel}>
+              </div>
+            </Field>
+            {intent && (
+              <pre className="max-h-64 overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
+                {JSON.stringify(intent, null, 2)}
+              </pre>
+            )}
+          </section>
+          <section className="payfi-card space-y-4 p-5">
+            <h2 className="text-base font-semibold text-zinc-100">{text.createContractIntent}</h2>
+            {isPublicUsdcTestnet(targetChainId) && (
+              <>
+                <Field label={text.merchantAddressLabel}>
+                  <input
+                    className="payfi-input font-mono text-xs"
+                    type="text"
+                    spellCheck={false}
+                    autoComplete="off"
+                    value={createMerchantAddress}
+                    onChange={(e) => setCreateMerchantAddress(e.target.value)}
+                    placeholder={text.merchantAddressPlaceholder}
+                  />
+                </Field>
+                {targetChainId === baseSepolia.id && (
+                  <>
+                    <p className="text-xs leading-relaxed text-zinc-500">
+                      {text.baseSepoliaCreateHint.replace(
+                        "{decimals}",
+                        String(demoUsdcDecimals(targetChainId)),
+                      )}
+                    </p>
+                    <Field label={text.usdcAddressLabel}>
+                      <input
+                        className="payfi-input font-mono text-xs"
+                        type="text"
+                        spellCheck={false}
+                        autoComplete="off"
+                        value={sepoliaAssetAddress}
+                        onChange={(e) => setSepoliaAssetAddress(e.target.value)}
+                        placeholder={defaultDemoAssetAddress(targetChainId)}
+                      />
+                    </Field>
+                  </>
+                )}
+                <div className="grid grid-cols-3 gap-2 sm:gap-4 [&>label]:min-w-0">
+                  <Field label={text.totalEscrowLabel}>
                     <input
-                      className="payfi-input font-mono text-xs"
+                      className="payfi-input w-full min-w-0 font-mono text-sm"
                       type="text"
-                      spellCheck={false}
+                      inputMode="decimal"
                       autoComplete="off"
-                      value={sepoliaAssetAddress}
-                      onChange={(e) => setSepoliaAssetAddress(e.target.value)}
-                      placeholder={defaultDemoAssetAddress(targetChainId)}
+                      value={sepoliaTotalUsdc}
+                      onChange={(e) => setSepoliaTotalUsdc(e.target.value)}
+                      placeholder={text.totalEscrowPlaceholder}
                     />
                   </Field>
-                </>
-              )}
-              <div className="grid grid-cols-3 gap-2 sm:gap-4 [&>label]:min-w-0">
-                <Field label={text.totalEscrowLabel}>
-                  <input
-                    className="payfi-input w-full min-w-0 font-mono text-sm"
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    value={sepoliaTotalUsdc}
-                    onChange={(e) => setSepoliaTotalUsdc(e.target.value)}
-                    placeholder={text.totalEscrowPlaceholder}
-                  />
-                </Field>
-                <Field label={text.releaseCountLabel}>
-                  <input
-                    className="payfi-input w-full min-w-0 font-mono text-sm"
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    value={sepoliaMaxReleases}
-                    onChange={(e) =>
-                      setSepoliaMaxReleases(e.target.value.replace(/\D/g, "") || "1")
-                    }
-                  />
-                </Field>
-                <Field label={text.cycleHoursLabel}>
-                  <input
-                    className="payfi-input w-full min-w-0 font-mono text-sm"
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    value={sepoliaCycleHours}
-                    onChange={(e) => setSepoliaCycleHours(e.target.value)}
-                    placeholder={text.cycleHoursPlaceholder}
-                  />
-                </Field>
-              </div>
-            </>
-          )}
-          <details className="rounded-xl border border-white/10 bg-black/20 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-zinc-300">
-              {text.wizardAdvanced}
-            </summary>
-            <p className="mt-2 text-xs leading-relaxed text-zinc-500">{text.webhookHint}</p>
-            <Field label={text.webhookUrlLabel}>
-              <input
-                className="payfi-input font-mono text-xs"
-                type="url"
-                spellCheck={false}
-                autoComplete="off"
-                value={webhookUrl}
-                onChange={(e) => setWebhookUrl(e.target.value)}
-                placeholder={text.webhookUrlPlaceholder}
-              />
-            </Field>
-            <Field label={text.webhookSecretLabel}>
-              <input
-                className="payfi-input font-mono text-xs"
-                type="password"
-                spellCheck={false}
-                autoComplete="off"
-                value={webhookSecret}
-                onChange={(e) => setWebhookSecret(e.target.value)}
-                placeholder={text.webhookSecretPlaceholder}
-              />
-            </Field>
-          </details>
-          <button
-            type="button"
-            disabled={Boolean(busy)}
-            onClick={() => void onCreate()}
-            className="payfi-btn-primary w-full sm:w-auto"
-          >
-            {busy === "create" ? text.creating : text.createIntent}
-          </button>
-          <Field label={text.intentIdLabel}>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                className="payfi-input flex-1 font-mono text-xs"
-                value={intentId}
-                onChange={(e) => setIntentId(e.target.value)}
-                placeholder={text.intentPlaceholder}
-              />
-              <button
-                type="button"
-                onClick={() => void refreshIntent()}
-                className="payfi-btn-ghost whitespace-nowrap"
-              >
-                {text.refreshIntent}
-              </button>
-            </div>
-          </Field>
-          {intent?.paymentUrl && (
-            <details className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
-              <summary className="cursor-pointer text-sm font-medium text-amber-200/90">
-                {text.gatewayOptionalTitle}
-              </summary>
-              <p className="mt-2 text-xs text-zinc-500">
-                <a
-                  href={intent.paymentUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sky-400 underline-offset-2 hover:underline"
-                >
-                  {text.gatewayOpen}
-                </a>
-              </p>
-            </details>
-          )}
-          {intent && (
-            <pre className="max-h-64 overflow-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
-              {JSON.stringify(intent, null, 2)}
-            </pre>
-          )}
-        </section>
+                  <Field label={text.releaseCountLabel}>
+                    <input
+                      className="payfi-input w-full min-w-0 font-mono text-sm"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={sepoliaMaxReleases}
+                      onChange={(e) =>
+                        setSepoliaMaxReleases(e.target.value.replace(/\D/g, "") || "1")
+                      }
+                    />
+                  </Field>
+                  <Field label={text.cycleHoursLabel}>
+                    <input
+                      className="payfi-input w-full min-w-0 font-mono text-sm"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      value={sepoliaCycleHours}
+                      onChange={(e) => setSepoliaCycleHours(e.target.value)}
+                      placeholder={text.cycleHoursPlaceholder}
+                    />
+                  </Field>
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              disabled={Boolean(busy)}
+              onClick={() => void onCreate()}
+              className="payfi-btn-primary w-full sm:w-auto"
+            >
+              {busy === "create" ? text.creating : text.createIntent}
+            </button>
+          </section>
+        </div>
       )}
 
       {wizardStep === 2 && (
@@ -1332,7 +1283,7 @@ export default function PayFiDemo() {
                   type="button"
                   disabled={Boolean(busy) || onWrongChain}
                   onClick={() => void onApprove()}
-                  className="payfi-btn-secondary"
+                  className="payfi-btn-primary"
                 >
                   {busy === "approve" ? text.approving : text.approveToken}
                 </button>
@@ -1363,6 +1314,25 @@ export default function PayFiDemo() {
                   ) : null}
                 </p>
               )}
+              <HashkeyFundingAlternative
+                paymentUrl={intent.paymentUrl}
+                registerTxValue={registerFundingTxInput}
+                onRegisterTxChange={setRegisterFundingTxInput}
+                onRegisterSubmit={onRegisterFundingTxPaste}
+                busy={busy}
+                labels={{
+                  eitherOrNote: text.fundEitherOrNote,
+                  cardTitle: text.hspAlternativeCardTitle,
+                  gatewayTitle: text.gatewayOptionalTitle,
+                  gatewayOpen: text.gatewayOpen,
+                  noPaymentUrl: text.hspNoPaymentUrl,
+                  registerTitle: text.hspRegisterTitle,
+                  registerHint: text.hspRegisterHint,
+                  registerPlaceholder: text.registerTxPlaceholder,
+                  registerSubmit: text.registerTxSubmit,
+                  registerBusy: text.registerTxBusy,
+                }}
+              />
             </>
           )}
         </section>
@@ -1395,7 +1365,7 @@ export default function PayFiDemo() {
                 type="button"
                 disabled={Boolean(busy) || onWrongChain}
                 onClick={() => void onSignUser()}
-                className="payfi-btn-secondary"
+                className="payfi-btn-primary"
               >
                 {busy === "sign-user" ? text.signing : text.signAsUser}
               </button>

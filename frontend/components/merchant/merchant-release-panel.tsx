@@ -1,16 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import {
-  useAccount,
-  useChainId,
-  useConnect,
-  useDisconnect,
-  useSignTypedData,
-  useSwitchChain,
-} from "wagmi";
+import { useAccount, useChainId, useSignTypedData, useSwitchChain } from "wagmi";
 import { getAddress, recoverTypedDataAddress } from "viem";
 import { domainFromApi, releaseMessageFromApi } from "@/lib/release-typed-data";
 import {
@@ -22,7 +13,7 @@ import {
   type IntentRecord,
 } from "@/lib/payfi-api";
 import { releaseStoreKey, type StoredReleaseState } from "@/lib/release-local-state";
-import { targetChain, targetChainId } from "@/lib/wagmi-config";
+import { targetChainId } from "@/lib/wagmi-config";
 import { useI18n } from "@/lib/i18n";
 import DualSignIntentFacts from "@/components/shared/dual-sign-intent-facts";
 
@@ -36,18 +27,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
   const text = {
     "zh-CN": {
       title: "商家签名（链上托管分期放款）",
-      lead: "连接与合同意向「商家」一致的钱包，完成 EIP-712 商家签名。用户签名须已在用户工作台完成。",
-      connectWallet: "连接钱包",
-      connecting: "连接中…",
-      chooseWallet: "选择钱包",
-      close: "关闭",
-      walletHint:
-        "列表来自钱包的 EIP-6963 广播；点选即可连接。若某扩展明确报告不可用，会显示「未检测到」并禁用。",
-      walletUnavailable: "未检测到",
-      noWalletDetected:
-        "当前没有检测到钱包。请确认已安装 MetaMask / Rabby 等扩展；部分环境需用桌面 Chrome 且页面由 HTTPS 或 localhost 打开，扩展才会注入。",
-      disconnect: "断开",
-      switchTo: "切换到",
+      lead: "请在页面顶部连接与合同意向「商家」一致的钱包，完成 EIP-712 商家签名。用户签名须已在用户工作台完成。",
       notConnected: "未连接",
       contractIntentId: "合同意向ID",
       userAddress: "用户地址",
@@ -70,8 +50,6 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       submitCooldownNote: "刚提交成功，数秒内已锁定「提交分期放款」以防重复上链。",
       intentStaleBeforeSubmit:
         "意向数据已更新（分期进度或 nonce 与页面不一致）。已刷新列表，请按当前 nonce 在用户工作台重新签名后再由商家签名并提交。",
-      userWorkbench: "用户工作台",
-      openUserSign: "打开用户工作台完成用户签名 →",
       needBothSigs: "需要用户与商家双方签名后才能提交。",
       merchantSigRecoverFail: "商家签名恢复地址与合同意向商家不一致。",
       walletMustBeMerchant: "当前钱包必须是合同意向商家：",
@@ -89,18 +67,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     },
     "zh-TW": {
       title: "商家簽名（鏈上託管分期放款）",
-      lead: "連接與合同意向「商家」一致的錢包，完成 EIP-712 商家簽名。使用者簽名須已在使用者工作台完成。",
-      connectWallet: "連接錢包",
-      connecting: "連接中…",
-      chooseWallet: "選擇錢包",
-      close: "關閉",
-      walletHint:
-        "列表來自錢包的 EIP-6963 廣播；點選即可連接。若某擴充明確回報不可用，會顯示「未偵測到」並停用。",
-      walletUnavailable: "未偵測到",
-      noWalletDetected:
-        "目前沒有偵測到錢包。請確認已安裝 MetaMask / Rabby 等擴充；部分環境需用桌面 Chrome 且頁面由 HTTPS 或 localhost 開啟，擴充才會注入。",
-      disconnect: "斷開",
-      switchTo: "切換到",
+      lead: "請在頁面頂部連接與合同意向「商家」一致的錢包，完成 EIP-712 商家簽名。使用者簽名須已在使用者工作台完成。",
       notConnected: "未連接",
       contractIntentId: "合同意向ID",
       userAddress: "使用者地址",
@@ -123,8 +90,6 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       submitCooldownNote: "剛提交成功，數秒內已鎖定「提交分期放款」以防重複上鏈。",
       intentStaleBeforeSubmit:
         "意向資料已更新（分期進度或 nonce 與頁面不一致）。已重新整理清單，請依目前 nonce 在使用者工作台重新簽名後，再由商家簽名並提交。",
-      userWorkbench: "使用者工作台",
-      openUserSign: "開啟使用者工作台完成使用者簽名 →",
       needBothSigs: "需要使用者與商家雙方簽名後才能提交。",
       merchantSigRecoverFail: "商家簽名還原地址與合同意向商家不一致。",
       walletMustBeMerchant: "目前錢包必須是合同意向商家：",
@@ -142,18 +107,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     },
     en: {
       title: "Merchant sign (on-chain escrow installment disbursement)",
-      lead: "Connect a wallet matching the intent merchant address and complete the EIP-712 merchant signature. The user must sign first on the User console.",
-      connectWallet: "Connect wallet",
-      connecting: "Connecting…",
-      chooseWallet: "Choose wallet",
-      close: "Close",
-      walletHint:
-        "Wallets are listed from EIP-6963 discovery. If an extension reports unavailable, it shows as not detected and is disabled.",
-      walletUnavailable: "Not detected",
-      noWalletDetected:
-        "No wallet detected. Install MetaMask / Rabby; some setups require desktop Chrome and HTTPS or localhost for injection.",
-      disconnect: "Disconnect",
-      switchTo: "Switch to",
+      lead: "Use the wallet control in the page header: connect with the intent merchant address, then complete the EIP-712 merchant signature. The user must sign first on the User console.",
       notConnected: "Not connected",
       contractIntentId: "Contract Intent ID",
       userAddress: "User address",
@@ -177,8 +131,6 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         "Submitted successfully — submit is locked for a few seconds to prevent duplicate on-chain txs.",
       intentStaleBeforeSubmit:
         "Intent data changed (installment progress/nonce differs from this page). List refreshed—have the user sign again on the User console for the current nonce, then merchant signs, then submit.",
-      userWorkbench: "User console",
-      openUserSign: "Open User console to sign as user →",
       needBothSigs: "Both user and merchant signatures are required before submit.",
       merchantSigRecoverFail: "Recovered merchant signature does not match intent merchant.",
       walletMustBeMerchant: "Wallet must be intent merchant:",
@@ -196,15 +148,12 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     },
   }[locale];
 
-  const { address, isConnected, connector } = useAccount();
+  const { address } = useAccount();
   const chainId = useChainId();
-  const { connect, connectors, isPending: connectPending } = useConnect();
-  const { disconnect } = useDisconnect();
-  const { switchChainAsync, isPending: switchPending } = useSwitchChain();
+  const { switchChainAsync } = useSwitchChain();
   const { signTypedDataAsync } = useSignTypedData();
 
   const [mounted, setMounted] = useState(false);
-  const [walletPickerOpen, setWalletPickerOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [userSig, setUserSig] = useState<`0x${string}` | null>(null);
@@ -217,15 +166,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     setMounted(true);
   }, []);
 
-  const effectiveIsConnected = mounted ? isConnected : false;
-  const effectiveChainId = mounted ? chainId : targetChainId;
-  const effectiveAddress = mounted ? address : null;
-  const onWrongChain = effectiveChainId !== targetChainId;
-
-  const walletConnectors = useMemo(
-    () => [...connectors].sort((a, b) => a.name.localeCompare(b.name, "en")),
-    [connectors],
-  );
+  const onWrongChain = mounted ? chainId !== targetChainId : false;
 
   const id = intent?.intentId?.trim() ?? "";
 
@@ -320,28 +261,6 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       );
     }
   }, [id, userSig, merchantSig, releasePrep, mounted]);
-
-  useEffect(() => {
-    if (isConnected) setWalletPickerOpen(false);
-  }, [isConnected]);
-
-  useEffect(() => {
-    if (!walletPickerOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setWalletPickerOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [walletPickerOpen]);
-
-  useEffect(() => {
-    if (!walletPickerOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [walletPickerOpen]);
 
   const clearLocal = useCallback(() => {
     setUserSig(null);
@@ -492,125 +411,17 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
 
   if (intent.status !== "active" && intent.status !== "partially_settled") {
     return (
-      <div className="payfi-card border border-white/8 p-4 text-sm text-zinc-500">{text.wrongStatus}</div>
+      <div className="payfi-card space-y-3 border border-white/8 p-4 text-sm">
+        <p className="text-zinc-500">{text.wrongStatus}</p>
+      </div>
     );
   }
-
-  const userSignLink = `/user?intentId=${encodeURIComponent(intent.intentId)}`;
 
   return (
     <section className="payfi-card space-y-4 p-5">
       <div>
         <h2 className="text-base font-semibold text-zinc-100">{text.title}</h2>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">{text.lead}</p>
-        <Link
-          href={userSignLink}
-          className="mt-2 inline-flex text-xs font-medium text-sky-400 underline-offset-2 hover:underline"
-        >
-          {text.openUserSign}
-        </Link>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/8 pb-4">
-        {!effectiveIsConnected ? (
-          <>
-            <button
-              type="button"
-              disabled={connectPending || !mounted}
-              onClick={() => setWalletPickerOpen((o) => !o)}
-              className="payfi-btn-primary text-xs"
-              aria-expanded={walletPickerOpen}
-            >
-              {connectPending ? text.connecting : text.connectWallet}
-            </button>
-            {mounted &&
-              walletPickerOpen &&
-              typeof document !== "undefined" &&
-              createPortal(
-                <div className="fixed inset-0 z-[100]" role="presentation">
-                  <button
-                    type="button"
-                    className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
-                    aria-label={text.close}
-                    onClick={() => setWalletPickerOpen(false)}
-                  />
-                  <aside
-                    role="dialog"
-                    aria-modal="true"
-                    className="absolute right-0 top-0 z-[101] flex h-full w-[min(19rem,100vw)] flex-col border-l border-white/10 bg-zinc-950/98 py-4 shadow-[-16px_0_48px_rgba(0,0,0,0.5)] backdrop-blur-xl sm:right-4 sm:top-4 sm:h-[calc(100vh-2rem)] sm:rounded-2xl sm:border sm:border-white/10"
-                  >
-                    <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 pb-3">
-                      <h2 className="text-sm font-semibold text-zinc-100">{text.chooseWallet}</h2>
-                      <button
-                        type="button"
-                        onClick={() => setWalletPickerOpen(false)}
-                        className="rounded-lg px-2 py-1 text-xs text-zinc-400 hover:bg-white/10"
-                        aria-label={text.close}
-                      >
-                        {text.close}
-                      </button>
-                    </div>
-                    <p className="px-4 pt-3 text-[11px] text-zinc-500">{text.walletHint}</p>
-                    <div className="mt-2 flex-1 overflow-y-auto px-2 pb-4">
-                      {walletConnectors.length === 0 ? (
-                        <p className="px-2 py-4 text-xs text-zinc-500">{text.noWalletDetected}</p>
-                      ) : (
-                        walletConnectors.map((c) => {
-                          const unavailable = c.ready === false;
-                          return (
-                            <button
-                              key={`${c.id}-${c.uid}`}
-                              type="button"
-                              disabled={unavailable || connectPending}
-                              onClick={() => {
-                                connect({ connector: c });
-                                setWalletPickerOpen(false);
-                              }}
-                              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 hover:bg-white/[0.08] disabled:opacity-40"
-                            >
-                              <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                              {unavailable && (
-                                <span className="text-[10px] text-zinc-500">{text.walletUnavailable}</span>
-                              )}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </aside>
-                </div>,
-                document.body,
-              )}
-          </>
-        ) : (
-          <>
-            <span className="font-mono text-[11px] text-zinc-300">
-              {effectiveAddress ?? "—"}
-            </span>
-            {connector && (
-              <span className="text-[11px] text-zinc-500">· {connector.name}</span>
-            )}
-            <button type="button" onClick={() => disconnect()} className="payfi-btn-ghost text-xs">
-              {text.disconnect}
-            </button>
-          </>
-        )}
-        {effectiveIsConnected && onWrongChain && (
-          <button
-            type="button"
-            disabled={switchPending}
-            onClick={() => void switchChainAsync({ chainId: targetChainId })}
-            className="payfi-btn-secondary text-xs"
-          >
-            {text.switchTo} {targetChain.name}
-          </button>
-        )}
-        {effectiveIsConnected && (
-          <span className="text-[11px] text-zinc-500">
-            {effectiveChainId}
-            {onWrongChain && ` → ${targetChainId}`}
-          </span>
-        )}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -618,7 +429,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
           type="button"
           disabled={Boolean(busy) || onWrongChain}
           onClick={() => void onSignMerchant()}
-          className="payfi-btn-secondary text-xs"
+          className="payfi-btn-primary text-xs"
         >
           {busy === "sign-merchant" ? text.signing : text.signAsMerchant}
         </button>

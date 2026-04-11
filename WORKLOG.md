@@ -2,7 +2,7 @@
 
 ## 架构概览
 
-- 目标：`PayFi` 托管支付演示，主链路是 `Intent -> Funding -> Release -> Refund`，默认演示链为 Base Sepolia，当前本地联调链为 Anvil `31337`。
+- 目标：`PayFi` 托管支付演示，主链路是 `Intent -> Funding -> Release -> Refund`。**公链演示优先级**：**HashKey Chain Testnet（`chainId=133`）** 为第一优先；**Base Sepolia（`84532`）** 为备选/与既有 Railway 历史部署对齐。本地开发联调链为 Anvil `31337`。
 - 合约层：`contracts/PayFiEscrow.sol`，核心能力包括多 `escrowId`、`createAndDeposit`、EIP-712 双签 `releaseBySignatures`、到期 `refund`、可选 `disputeModule`。
 - API 层：`src/server.ts` + `src/routes/intents.ts`，提供支付意图 CRUD、funding 确认、release prepare/submit、refund、debug 接口。
 - 状态层：通过 **`intentStore`**（`src/store/intentStore.ts`）统一读写意图；未配置数据库时使用内存（`src/store/memory.js`），配置 **`DATABASE_URL`** 时使用 Postgres（`src/store/postgresIntent.ts` + 启动迁移）。状态覆盖 `awaiting_funding -> active -> partially_settled/settled/refunded`。
@@ -10,12 +10,14 @@
 
 ## 当前合约地址
 
-- 环境：Anvil 本地链（`chainId=31337`）。
+- **公链优先级（演示）**：以 **HashKey Testnet（133）** 为主；配置模板见 **`.env.hashkey.testnet.example`**、联调清单见 **`docs/CHECKLIST-env-hashkey-local-neon.md`**（`bash scripts/switch-env.sh hashkey`）。
+- **HashKey Chain Testnet**：测试网 USDC（**6 decimals**）**`0x8FE3cB719Ee4410E236Cd6b72ab1fCDC06eF53c6`**（与前端 `chainId=133` 时默认一致，见 `frontend/lib/token-addresses.ts`）；**`ESCROW_ADDRESS`** 须在 **同一网络**上部署后填入 **`.env.hashkey.testnet`**（勿与 Base Sepolia / Anvil 资产混用）。
+- 环境：**Anvil** 本地链（`chainId=31337`）。
 - `PayFiEscrow`：`0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512`（来源：`.env` + `broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
 - `MockERC20 (mUSDC)`：`0x5FbDB2315678afecb367f032d93F642f64180aa3`（来源：`broadcast/LocalAnvilBootstrap.s.sol/31337/run-latest.json`）。
-- **Base Sepolia** 演示资产：**Circle 测试 USDC** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`（6 decimals）；前端在 `chainId=84532` 时默认使用该地址（见 `frontend/lib/token-addresses.ts`）。
-- **Base Sepolia** `PayFiEscrow`：`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`（[Basescan Sepolia](https://sepolia.basescan.org/address/0x3FCE185FFF78dDB1120C606A0611e168646a0CeA)）；与根目录 **`.env.example`** 中 **`ESCROW_ADDRESS`** 一致（团队演示用；生产请自部署并改 Variables）。
-- 备注：本地 Anvil 与 Base Sepolia 的 **`ESCROW_ADDRESS` / `asset`** 须在各自 **`.env`** 与 Railway Variables 中与链上实例一致，否则 EIP-712 与 **`funding/tx`** 校验会失败。
+- **Base Sepolia（备选）** 演示资产：**Circle 测试 USDC** `0x036CbD53842c5426634e7929541eC2318f3dCF7e`（6 decimals）；前端在 `chainId=84532` 时使用（见 `frontend/lib/token-addresses.ts`）。
+- **Base Sepolia（备选）** `PayFiEscrow`：`0x3FCE185FFF78dDB1120C606A0611e168646a0CeA`（[Basescan Sepolia](https://sepolia.basescan.org/address/0x3FCE185FFF78dDB1120C606A0611e168646a0CeA)）；**`.env.example`** 注释中保留该地址供 Base Sepolia 场景对照（当前模板默认 **133** 时 **`ESCROW_ADDRESS`** 应填本网部署；历史 Railway/团队演示；生产请自部署并改 Variables）。
+- 备注：各环境的 **`ESCROW_ADDRESS` / `asset`** 须与该环境 **`CHAIN_ID`**、RPC 指向的链上实例一致（Anvil / HashKey 133 / Base Sepolia 勿交叉），否则 EIP-712 与 **`funding/tx`** 校验会失败。
 
 ## 已解决的问题
 
@@ -24,11 +26,12 @@
 - API 已支持链上模式：`funding/tx` 可从交易回执解析 `EscrowCreated` 并校验 `user/merchant/asset/amount/agreementHash` 一致性。
 - API 已支持链上真实交易提交流程：`release/submit` 与 `refund` 在配置 RPC/私钥后可由提交账户发交易并回写本地状态。
 - 已提供本地完整联调脚本与步骤：anvil 启动、bootstrap 部署、签名脚本、curl 测试、debug 接口。
-- **Base Sepolia** 演示用 **`PayFiEscrow`**（`0x3FCE185…`）已部署，地址写入 **`.env.example`**，并同步 **`README.md`**、**`docs/railway-base-sepolia-deploy.md`** 与「当前合约地址」+ Basescan 链接。
+- **Base Sepolia** 演示用 **`PayFiEscrow`**（`0x3FCE185…`）已部署，地址在 **`.env.example`** 注释与 **`README.md`**、**`docs/railway-base-sepolia-deploy.md`**、本 WORKLOG「当前合约地址」+ Basescan 链接中可查（**备选公链**，优先级低于 HashKey Testnet）。
 
 ## 待解决的问题
 
-- Railway API（`payfidemo-production`）：**`GET /health`**（**`persistence: postgres`**）、**创建 intent**、**Restart 后同一 `intentId` 仍可 `GET`** 已于 **2026-04-07** 验收记入本 WORKLOG；公网 **链上 funding（`approve` + `createAndDeposit` → `funding/tx`）** 仍可补做。
+- **公链端到端验收（优先级）**：以 **HashKey Testnet（133）** 为主路径，补 **`approve` + `createAndDeposit` → `funding/tx` → `release` → `refund`** 冒烟并沉淀录屏/WORKLOG 记录；**Base Sepolia** 上同名流程为备选（可与既有 Railway 变量对齐时补做）。
+- Railway API（`payfidemo-production`）：**`GET /health`**（**`persistence: postgres`**）、**创建 intent**、**Restart 后同一 `intentId` 仍可 `GET`** 已于 **2026-04-07** 验收记入本 WORKLOG；若线上仍指向 Base Sepolia，**链上 funding** 验收跟随上条「备选」而非主优先级。
 - 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**Webhook** 仍待 **投递记录表、自动重试、幂等落库、商户侧投递详情** 等进阶闭环（**2026-04-09** 已落地对外真实 POST、超时与本地/链上自测文档）。
 - 完成前端主路径（创建意图、充值提示、双签提交、状态展示、退款操作）并打通演示录屏。
 - 评估并按计划决定是否接入 `x402`（建议先保护 1-2 条只读 API，保留环境开关）。
@@ -39,24 +42,43 @@
 - 不在链上签名结构中加入 `termsVersion`（仅保留在 intent/webhook 语义层）。
 - 不混淆 `intentId` 与 `escrowId`：前者是业务标识，后者是链上托管实例标识。
 - 不把真实生产私钥、密钥或敏感配置提交到仓库；`.env` 仅允许本地测试用途。
-- 不在截止前扩大范围到多链/主网/完整第三方结算协议真联调，优先保证单链路稳定可演示。
+- 不在截止前扩大范围到多链/主网/完整第三方结算协议真联调；**公链演示以 HashKey Testnet 单链路稳定可演示为第一优先**。
 
 ## 当日记录（按日期倒序：最新在上）
+
+## 当日记录（2026-04-12）
+
+【今日完成】
+- **用户工作台（`payfi-demo`）**：「刷新合同意向」改为「查询合同意向」，按钮位于 intentId 输入框左侧；移除「高级选项（Webhook）」整块；合同意向编号与查询区独立成卡并置于「新建托管合同意向」表单之上；界面用语「创建」统一为「新建」（含 `docs/payfidemo_flow_zh.html` 图示文案、`frontend/.env.example` 等）；顶栏移除链横幅 / HSP 手册链接 / API 地址三行，仅保留 Logo 与渐变标题（与商家、详情页头部风格一致）；删除仅用于上述展示的无用文案键与 `payfiApiDisplay`。
+- **首页（`role-entry`）**：移除「继续上次流程」卡片；HashKey 钱包说明与 USDC/商家环境变量合并为单卡「HashKey 测试网」，`AddHashKeyNetworkButton` 增加 `compact`（无引导段与 Chain ID 脚注）；新增「当前系统」卡：CHAIN_ID、CHAIN_RPC_URL、Frontend URL、API URL、持久化层（`getPayFiHealth`）；「用户 / 商家」分段控件移至「我是商家」卡片之后。
+- **商家控制台（`merchant-console`）**：合同意向列表行样式对齐首页「最近记录」；「全部状态」与搜索框紧贴列表上方，签名区与网关对账在列表与分页之后。
+- **详情页（`intent-detail`）**：标题与面包屑层级与首页一致（渐变标题、`text-zinc-400` 等）。
+- **后端 `/health`**：响应增加 `databaseProduct`（`getDatabaseProductLabel` 按 `DATABASE_URL` 协议推断 PostgreSQL / MySQL 等展示名，不暴露连接串）。
+- **前端 `payfi-api`**：导出 `payfiHttpBase`、`getPayFiHealth`；`token-addresses` 等注释用语与「新建」一致。
+
+【代码证据】
+- `frontend/components/payfi-demo.tsx`、`frontend/components/home/role-entry.tsx`、`frontend/components/merchant/merchant-console.tsx`、`frontend/components/intent/intent-detail.tsx`
+- `frontend/components/shared/add-hashkey-network-button.tsx`、`frontend/lib/payfi-api.ts`
+- `src/server.ts`、`src/db/pool.ts`
+- `docs/payfidemo_flow_zh.html`、`frontend/.env.example`
 
 ## 当日记录（2026-04-11）
 
 【今日完成】
+- **公链优先级调整**：仓库级约定 **公链演示以 HashKey Chain Testnet（`chainId=133`）为第一优先**；**Base Sepolia** 保留为备选及与历史 Railway 部署对齐。已更新本 WORKLOG「架构概览」「当前合约地址」「待解决问题」「绝对不要动」相应表述；既往日记中「优先 Base Sepolia 端到端」的验收目标在优先级上由 **HashKey Testnet** 接棒，历史段落不再逐条改写以免混淆时间线。
+- **Hackathon 进度表对齐**：**`docs/hackathon-2045-dev-schedule.md`** 已与上述优先级同步（开篇说明、W0/W1、P0、提交自查「主赛道」、文档索引链至 **`docs/CHECKLIST-env-hashkey-local-neon.md`**）。
 - **产品叙事**：统一采用「**链上托管分期放款**」表述（中英繁：`layout` 默认站点说明、`role-entry` 首页卡片与 HashKey 提示、`payfi-demo` 创建意向与双签/提交/Webhook 相关文案、`merchant-release-panel`、`merchant-console` 商家签名区、`intent-detail` 金额进度与下一步指引）；英文主用语为 *on-chain escrow installment disbursement* / *installment disbursement*；链上与 API 字段名仍为 `release` 等，未改协议层。
 - **用户工作台布局**：`payfi-demo` 在公网测试网创建意向流程中，「托管总额 / 分期期数 / 托管周期」三处输入使用 `grid-cols-3` 单行并排，输入框加 `min-w-0` 以避免窄宽度下布局溢出。
 
 【代码证据】
+- `WORKLOG.md`（公链优先级与合约地址段落）
+- `docs/hackathon-2045-dev-schedule.md`
 - `frontend/app/layout.tsx`
 - `frontend/components/home/role-entry.tsx`
 - `frontend/components/payfi-demo.tsx`
 - `frontend/components/intent/intent-detail.tsx`
 - `frontend/components/merchant/merchant-console.tsx`
 - `frontend/components/merchant/merchant-release-panel.tsx`
-- `WORKLOG.md`
 
 ## 当日记录（2026-04-10）
 

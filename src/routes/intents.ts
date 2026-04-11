@@ -24,8 +24,15 @@ import {
   isChainMode,
   parseChainIdFromEnv,
 } from "../chain/config.js";
+import { registerEscrowOnChain } from "../chain/escrow.js";
 import { parseEscrowCreatedFromReceipt } from "../chain/funding.js";
-import { createReusableOrder, queryMerchantPayments } from "../hashkey/client.js";
+import {
+  collectFlowIdsFromPaymentPayload,
+  createReusableOrder,
+  normalizeMaybeTxHash,
+  queryMerchantPayments,
+  resolveGatewayTxForReconciliation,
+} from "../hashkey/client.js";
 
 const router = Router();
 
@@ -232,41 +239,159 @@ router.get("/:intentId/gateway-reconciliation", async (req, res) => {
     return;
   }
   try {
-    const preferPaymentReq = Boolean(row.hskPaymentReqId?.trim());
-    const { envelope, items } = await queryMerchantPayments(
-      preferPaymentReq
-        ? { paymentRequestId: row.hskPaymentReqId!.trim() }
-        : { cartMandateId: row.hskCartMandateId!.trim() },
-    );
-    if (envelope.code !== undefined && envelope.code !== 0) {
+    /** PAY-REQ-* often returns a stub (`payment-required`); cart_mandate_id may too. Real tx is often on GET /payments?flow_id= from stub `flow_id`. */
+    type PayFilter =
+      | { cartMandateId: string }
+      | { paymentRequestId: string }
+      | { flowId: string };
+    type PaymentPack = {
+      envelope: Awaited<ReturnType<typeof queryMerchantPayments>>["envelope"];
+      items: Awaited<ReturnType<typeof queryMerchantPayments>>["items"];
+      resolved: ReturnType<typeof resolveGatewayTxForReconciliation>;
+      params: PayFilter;
+    };
+
+    const plans: PayFilter[] = [];
+    if (row.hskCartMandateId?.trim()) plans.push({ cartMandateId: row.hskCartMandateId.trim() });
+    if (row.hskPaymentReqId?.trim()) plans.push({ paymentRequestId: row.hskPaymentReqId.trim() });
+
+    const rawLocalFunding = row.fundingTxHash?.trim() ?? "";
+    const ids = {
+      cartMandateId: row.hskCartMandateId,
+      paymentRequestId: row.hskPaymentReqId,
+    };
+
+    const lookupTried: ("cart_mandate_id" | "payment_request_id" | "flow_id")[] = [];
+    let chosen: PaymentPack | undefined;
+    let fallback: PaymentPack | undefined;
+    let lastCodeError: { code?: number; msg?: string } | null = null;
+    let lastFetchError: Error | null = null;
+
+    const hasResolvedTx = (p: PaymentPack) =>
+      Boolean(p.resolved.gatewayTx && normalizeMaybeTxHash(p.resolved.gatewayTx));
+
+    for (const params of plans) {
+      lookupTried.push("cartMandateId" in params ? "cart_mandate_id" : "payment_request_id");
+      try {
+        const { envelope, items } = await queryMerchantPayments(params);
+        if (envelope.code !== undefined && envelope.code !== 0) {
+          lastCodeError = { code: envelope.code, msg: envelope.msg };
+          continue;
+        }
+        const resolved = resolveGatewayTxForReconciliation(items, ids, envelope.data, rawLocalFunding || null);
+        const pack: PaymentPack = { envelope, items, resolved, params };
+        if (hasResolvedTx(pack)) {
+          chosen = pack;
+          break;
+        }
+        if (!fallback) fallback = pack;
+      } catch (e) {
+        lastFetchError = e instanceof Error ? e : new Error(String(e));
+      }
+    }
+
+    let final: PaymentPack | undefined = chosen ?? fallback;
+    if (!final) {
+      if (lastCodeError) {
+        res.status(502).json({
+          error: "HashKey gateway returned error code",
+          code: lastCodeError.code,
+          msg: lastCodeError.msg,
+          intentId: row.intentId,
+        });
+        return;
+      }
       res.status(502).json({
-        error: "HashKey gateway returned error code",
-        code: envelope.code,
-        msg: envelope.msg,
-        intentId: row.intentId,
+        error: "gateway reconciliation failed",
+        detail: lastFetchError?.message ?? "no usable HashKey payment response",
       });
       return;
     }
 
-    const primary = items[0];
-    const gatewayTx = typeof primary?.tx_signature === "string" ? primary.tx_signature.trim() : "";
-    const localTx = row.fundingTxHash?.trim() ?? "";
+    if (!hasResolvedTx(final)) {
+      const flowIds = [
+        ...new Set([
+          ...collectFlowIdsFromPaymentPayload(final.envelope.data),
+          ...collectFlowIdsFromPaymentPayload(final.items),
+        ]),
+      ];
+      for (const fid of flowIds) {
+        lookupTried.push("flow_id");
+        try {
+          const { envelope, items } = await queryMerchantPayments({ flowId: fid });
+          if (envelope.code !== undefined && envelope.code !== 0) {
+            lastCodeError = { code: envelope.code, msg: envelope.msg };
+            continue;
+          }
+          const resolved = resolveGatewayTxForReconciliation(
+            items,
+            ids,
+            envelope.data,
+            rawLocalFunding || null,
+          );
+          const pack: PaymentPack = { envelope, items, resolved, params: { flowId: fid } };
+          if (hasResolvedTx(pack)) {
+            final = pack;
+            break;
+          }
+        } catch (e) {
+          lastFetchError = e instanceof Error ? e : new Error(String(e));
+        }
+      }
+    }
+
+    const { items, resolved, params } = final;
+    const { primary, gatewayTx: gatewayTxRaw } = resolved;
+    const gatewayNorm = gatewayTxRaw ? normalizeMaybeTxHash(gatewayTxRaw) : null;
+    const localNorm = rawLocalFunding ? normalizeMaybeTxHash(rawLocalFunding) : null;
     const explorerBase =
       process.env.BLOCKSCOUT_URL?.trim().replace(/\/$/, "") || "https://testnet-explorer.hsk.xyz";
-    const gatewayTxUrl =
-      gatewayTx && /^0x[a-fA-F0-9]{64}$/.test(gatewayTx) ? `${explorerBase}/tx/${gatewayTx}` : null;
-    const localTxUrl =
-      localTx && /^0x[a-fA-F0-9]{64}$/.test(localTx) ? `${explorerBase}/tx/${localTx}` : null;
+    const gatewayTxUrl = gatewayNorm ? `${explorerBase}/tx/${gatewayNorm}` : null;
+    const localTxUrl = localNorm ? `${explorerBase}/tx/${localNorm}` : null;
     const match =
-      gatewayTx && localTx
-        ? gatewayTx.toLowerCase() === localTx.toLowerCase()
-        : null;
+      gatewayNorm && localNorm ? gatewayNorm === localNorm : null;
+
+    const gatewayPaymentStatus =
+      primary && typeof primary === "object" && "status" in primary
+        ? String((primary as { status?: unknown }).status ?? "").trim()
+        : "";
+    const gst = gatewayPaymentStatus.toLowerCase();
+
+    type ComparisonHintCode =
+      | "gateway_payment_required_local_funded"
+      | "gateway_no_tx_local_funded"
+      | "local_funding_tx_missing"
+      | "no_hashes_to_compare";
+
+    let comparisonHintCode: ComparisonHintCode | null = null;
+    if (!gatewayNorm && !localNorm) {
+      comparisonHintCode = "no_hashes_to_compare";
+    } else if (!gatewayNorm && localNorm) {
+      if (gst === "payment-required" || gst === "pending" || gst === "awaiting_payment") {
+        comparisonHintCode = "gateway_payment_required_local_funded";
+      } else {
+        comparisonHintCode = "gateway_no_tx_local_funded";
+      }
+    } else if (gatewayNorm && !localNorm) {
+      comparisonHintCode = "local_funding_tx_missing";
+    }
+
+    const lookupSelected: "cart_mandate_id" | "payment_request_id" | "flow_id" = "flowId" in params
+      ? "flow_id"
+      : "cartMandateId" in params
+        ? "cart_mandate_id"
+        : "payment_request_id";
+    const selectedFlowId = "flowId" in params ? params.flowId : null;
 
     res.json({
       intentId: row.intentId,
-      query: preferPaymentReq
-        ? { by: "payment_request_id" as const, paymentRequestId: row.hskPaymentReqId }
-        : { by: "cart_mandate_id" as const, cartMandateId: row.hskCartMandateId },
+      query: {
+        cartMandateId: row.hskCartMandateId ?? null,
+        paymentRequestId: row.hskPaymentReqId ?? null,
+        lookupTried,
+        lookupSelected,
+        selectedFlowId,
+      },
       local: {
         status: row.status,
         fundingTxHash: row.fundingTxHash,
@@ -277,11 +402,12 @@ router.get("/:intentId/gateway-reconciliation", async (req, res) => {
         primary: primary ?? null,
       },
       reconciliation: {
-        gatewayTxSignature: gatewayTx || null,
-        localFundingTxHash: localTx || null,
+        gatewayTxSignature: gatewayNorm ?? (gatewayTxRaw || null),
+        localFundingTxHash: localNorm ?? (rawLocalFunding || null),
         txMatch: match,
         explorerGatewayTxUrl: gatewayTxUrl,
         explorerLocalTxUrl: localTxUrl,
+        comparisonHintCode,
       },
     });
   } catch (e) {
@@ -326,67 +452,119 @@ router.post("/:intentId/funding/tx", async (req, res) => {
     if (isChainMode()) {
       const escrowAddr = getAddress(process.env.ESCROW_ADDRESS!.trim());
       const parsed = await parseEscrowCreatedFromReceipt(escrowAddr, txHash);
-      if (!parsed) {
-        res.status(400).json({ error: "no EscrowCreated in receipt for ESCROW_ADDRESS" });
-        return;
-      }
-      if (parsed.user !== row.user) {
-        res.status(400).json({ error: "user mismatch", onChain: parsed.user, intent: row.user });
-        return;
-      }
-      if (parsed.merchant !== row.merchant) {
-        res
-          .status(400)
-          .json({ error: "merchant mismatch", onChain: parsed.merchant, intent: row.merchant });
-        return;
-      }
-      if (parsed.asset !== row.asset) {
-        res.status(400).json({ error: "asset mismatch", onChain: parsed.asset, intent: row.asset });
-        return;
-      }
-      if (parsed.amountTotal !== BigInt(row.amountTotal)) {
-        res.status(400).json({
-          error: "amountTotal mismatch",
-          onChain: parsed.amountTotal.toString(),
-          intent: row.amountTotal,
-        });
-        return;
-      }
-      if (parsed.agreementHash.toLowerCase() !== row.anchor.agreementHash.toLowerCase()) {
-        res.status(400).json({ error: "agreementHash mismatch" });
-        return;
-      }
+      if (parsed) {
+        if (parsed.user !== row.user) {
+          res.status(400).json({ error: "user mismatch", onChain: parsed.user, intent: row.user });
+          return;
+        }
+        if (parsed.merchant !== row.merchant) {
+          res
+            .status(400)
+            .json({ error: "merchant mismatch", onChain: parsed.merchant, intent: row.merchant });
+          return;
+        }
+        if (parsed.asset !== row.asset) {
+          res.status(400).json({ error: "asset mismatch", onChain: parsed.asset, intent: row.asset });
+          return;
+        }
+        if (parsed.amountTotal !== BigInt(row.amountTotal)) {
+          res.status(400).json({
+            error: "amountTotal mismatch",
+            onChain: parsed.amountTotal.toString(),
+            intent: row.amountTotal,
+          });
+          return;
+        }
+        if (parsed.agreementHash.toLowerCase() !== row.anchor.agreementHash.toLowerCase()) {
+          res.status(400).json({ error: "agreementHash mismatch" });
+          return;
+        }
 
-      row.fundingTxHash = txHash;
-      row.escrowId = parsed.escrowId;
-      row.status = "active";
-      row.expiresAt = parsed.expiresAt;
-      await intentStore.saveIntent(row);
+        row.fundingTxHash = txHash;
+        row.escrowId = parsed.escrowId;
+        row.status = "active";
+        row.expiresAt = parsed.expiresAt;
+        await intentStore.saveIntent(row);
 
-      try {
-        await settlementAdapter.emit("INTENT_FUNDED", {
-          intentId: row.intentId,
-          escrowId: parsed.escrowId,
-          txHash,
-          ...row.anchor,
-        });
-        await dispatchWebhookDemo({
-          webhookUrl: row.webhookUrl,
-          webhookSecret: row.webhookSecret,
-          type: "INTENT_FUNDED",
-          body: {
+        try {
+          await settlementAdapter.emit("INTENT_FUNDED", {
             intentId: row.intentId,
             escrowId: parsed.escrowId,
             txHash,
-            agreementHash: row.anchor.agreementHash,
-            termsVersion: row.anchor.termsVersion,
-          },
+            ...row.anchor,
+          });
+          await dispatchWebhookDemo({
+            webhookUrl: row.webhookUrl,
+            webhookSecret: row.webhookSecret,
+            type: "INTENT_FUNDED",
+            body: {
+              intentId: row.intentId,
+              escrowId: parsed.escrowId,
+              txHash,
+              agreementHash: row.anchor.agreementHash,
+              termsVersion: row.anchor.termsVersion,
+            },
+          });
+        } catch (sideErr) {
+          console.error("[funding/tx] settlement outbox / webhook log failed:", sideErr);
+        }
+        res.json({
+          ok: true,
+          status: row.status,
+          escrowId: parsed.escrowId,
+          chain: true,
+          fundingPath: "createAndDeposit",
         });
-      } catch (sideErr) {
-        console.error("[funding/tx] settlement outbox / webhook log failed:", sideErr);
+        return;
       }
-      res.json({ ok: true, status: row.status, escrowId: parsed.escrowId, chain: true });
-      return;
+
+      /** HashKey HSP (EIP-3009 / USDC) checkout tx has no EscrowCreated — same path as POST /webhooks/hashkey */
+      try {
+        const escrowId = await registerEscrowOnChain(row, txHash);
+        row.fundingTxHash = txHash;
+        row.escrowId = escrowId;
+        row.expiresAt = Math.floor(Date.now() / 1000) + row.durationSeconds;
+        row.status = "active";
+        await intentStore.saveIntent(row);
+        try {
+          await settlementAdapter.emit("INTENT_FUNDED", {
+            intentId: row.intentId,
+            escrowId,
+            txHash,
+            ...row.anchor,
+          });
+          await dispatchWebhookDemo({
+            webhookUrl: row.webhookUrl,
+            webhookSecret: row.webhookSecret,
+            type: "INTENT_FUNDED",
+            body: {
+              intentId: row.intentId,
+              escrowId,
+              txHash,
+              agreementHash: row.anchor.agreementHash,
+              termsVersion: row.anchor.termsVersion,
+            },
+          });
+        } catch (sideErr) {
+          console.error("[funding/tx] settlement outbox / webhook log failed:", sideErr);
+        }
+        res.json({
+          ok: true,
+          status: row.status,
+          escrowId,
+          chain: true,
+          fundingPath: "registerDeposit",
+        });
+        return;
+      } catch (regErr) {
+        res.status(400).json({
+          error: "funding tx not recognized for chain mode",
+          detail:
+            "Expected a receipt with EscrowCreated (createAndDeposit), or a HashKey checkout tx that registerDeposit accepts. " +
+            (regErr instanceof Error ? regErr.message : String(regErr)),
+        });
+        return;
+      }
     }
 
     const escrowId = String(demoEscrowCounter++);

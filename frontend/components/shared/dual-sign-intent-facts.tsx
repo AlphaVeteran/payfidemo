@@ -21,7 +21,7 @@ type Props = {
   intent: IntentRecord;
   labels: DualSignIntentFactsLabels;
   className?: string;
-  /** 刷新意向数据（与用户页「刷新合同意向」一致） */
+  /** 刷新意向数据（与用户页「查询合同意向」一致） */
   onRefresh?: () => void | Promise<void>;
 };
 

@@ -10,6 +10,8 @@ type Props = {
   /** 仅当目标为 HashKey 测试网时由父组件传入 true */
   enabled: boolean;
   className?: string;
+  /** 为 true 时不展示引导文案与 Chain ID/RPC 脚注，仅按钮与操作反馈 */
+  compact?: boolean;
 };
 
 function getInjectedProvider(): MinimalEip1193Provider | null {
@@ -26,7 +28,11 @@ function getInjectedProvider(): MinimalEip1193Provider | null {
   return raw;
 }
 
-export default function AddHashKeyNetworkButton({ enabled, className = "payfi-btn-secondary text-xs" }: Props) {
+export default function AddHashKeyNetworkButton({
+  enabled,
+  className = "payfi-btn-secondary text-xs",
+  compact = false,
+}: Props) {
   const { locale } = useI18n();
   const text = {
     "zh-CN": {
@@ -111,15 +117,17 @@ export default function AddHashKeyNetworkButton({ enabled, className = "payfi-bt
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-[11px] leading-relaxed text-zinc-500">{text.lead}</p>
+      {!compact && <p className="text-[11px] leading-relaxed text-zinc-500">{text.lead}</p>}
       <button type="button" className={className} disabled={busy} onClick={() => void onClick()}>
         {busy ? text.loading : text.label}
       </button>
       {msg && <p className="text-[11px] text-emerald-400/95">{msg}</p>}
       {err && <p className="text-[11px] text-red-400/95">{err}</p>}
-      <p className="text-[10px] text-zinc-600">
-        Chain ID {HASHKEY_TESTNET_CHAIN_ID} · RPC {rpc}
-      </p>
+      {!compact && (
+        <p className="text-[10px] text-zinc-600">
+          Chain ID {HASHKEY_TESTNET_CHAIN_ID} · RPC {rpc}
+        </p>
+      )}
     </div>
   );
 }

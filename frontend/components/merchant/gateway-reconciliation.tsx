@@ -20,7 +20,7 @@ export default function GatewayReconciliationCard({ intent }: Props) {
       subtitle: "调用 HashKey Merchant API（GET /merchant/payments）与本地托管状态、链上交易对照。",
       cta: "查询网关支付状态",
       loading: "查询中…",
-      noHsk: "该意向无网关订单号（未走 HashKey reusable 创建或创建失败）。",
+      noHsk: "该意向无网关订单号（未走 HashKey reusable 流程，或新建失败）。",
       gatewayStatus: "网关状态",
       localStatus: "本地 intent 状态",
       gatewayTx: "网关 tx_signature",
@@ -28,8 +28,14 @@ export default function GatewayReconciliationCard({ intent }: Props) {
       match: "交易哈希一致",
       mismatch: "交易哈希不一致或仅一侧有值（路径不同属正常）",
       unknown: "无法对比（缺一侧哈希）",
+      hintGatewayPending:
+        "网关仍为 payment-required 且无链上交易哈希。若托管是「直接链上充值」（未在 HashKey 收银台完成支付），属预期；分期释放不会改变网关状态。请以本地 fundingTxHash 为准。",
+      hintGatewayNoTx: "网关未返回交易哈希，但本地已有 fundingTxHash；可能入账路径与 HSP 收银台不一致。",
+      hintLocalMissing: "本地未记录 fundingTxHash；请先完成上链并在意向中登记充值交易。",
+      hintNoHashes: "两侧均无可用链上交易哈希可对账。",
       none: "—",
       raw: "网关返回（摘要）",
+      lookup: "本次查询顺序",
       doc: "手册：hashfans.io → HSP → Merchant Docs",
     },
     "zh-TW": {
@@ -37,7 +43,7 @@ export default function GatewayReconciliationCard({ intent }: Props) {
       subtitle: "呼叫 HashKey Merchant API（GET /merchant/payments）與本地託管狀態、鏈上交易對照。",
       cta: "查詢網關支付狀態",
       loading: "查詢中…",
-      noHsk: "該意向無網關訂單號（未走 HashKey reusable 建立或建立失敗）。",
+      noHsk: "該意向無網關訂單號（未走 HashKey reusable 流程，或新建失敗）。",
       gatewayStatus: "網關狀態",
       localStatus: "本地 intent 狀態",
       gatewayTx: "網關 tx_signature",
@@ -45,8 +51,14 @@ export default function GatewayReconciliationCard({ intent }: Props) {
       match: "交易雜湊一致",
       mismatch: "交易雜湊不一致或僅一側有值（路徑不同屬正常）",
       unknown: "無法對比（缺一側雜湊）",
+      hintGatewayPending:
+        "網關仍為 payment-required 且無鏈上交易雜湊。若託管為「直接鏈上充值」（未在 HashKey 收銀台完成支付），屬預期；分期釋放不會改變網關狀態。請以本地 fundingTxHash 為準。",
+      hintGatewayNoTx: "網關未回傳交易雜湊，但本地已有 fundingTxHash；可能入帳路徑與 HSP 收銀台不一致。",
+      hintLocalMissing: "本地未記錄 fundingTxHash；請先完成上鏈並在意向中登記充值交易。",
+      hintNoHashes: "兩側均無可用鏈上交易雜湊可對帳。",
       none: "—",
       raw: "網關返回（摘要）",
+      lookup: "本次查詢順序",
       doc: "手冊：hashfans.io → HSP → Merchant Docs",
     },
     en: {
@@ -63,8 +75,15 @@ export default function GatewayReconciliationCard({ intent }: Props) {
       match: "Tx hash match",
       mismatch: "Mismatch or one side empty (normal if flows differ)",
       unknown: "Cannot compare (missing one hash)",
+      hintGatewayPending:
+        "Gateway is still payment-required with no on-chain tx hash. If escrow was funded by a direct on-chain deposit (not via the HashKey checkout), that is expected—installment releases do not change gateway status. Trust local fundingTxHash.",
+      hintGatewayNoTx:
+        "Gateway returned no tx hash but local fundingTxHash exists; funding path may differ from the HSP checkout.",
+      hintLocalMissing: "No local fundingTxHash; register the funding transaction on the intent first.",
+      hintNoHashes: "Neither side has a comparable on-chain tx hash.",
       none: "—",
       raw: "Gateway response (summary)",
+      lookup: "Lookup order",
       doc: "Manual: hashfans.io → HSP → Merchant Docs",
     },
   }[locale];
@@ -106,6 +125,18 @@ export default function GatewayReconciliationCard({ intent }: Props) {
         <p className="text-sm font-semibold text-emerald-100/95">{text.title}</p>
         <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">{text.subtitle}</p>
         <p className="mt-1 text-[10px] text-zinc-600">{text.doc}</p>
+        {data?.query?.lookupTried?.length ? (
+          <p className="mt-1 text-[10px] text-zinc-600">
+            {text.lookup}: {data.query.lookupTried.join(" → ")} →{" "}
+            <span className="font-mono text-zinc-500">{data.query.lookupSelected}</span>
+            {data.query.selectedFlowId ? (
+              <>
+                {" "}
+                <span className="font-mono text-zinc-500">({data.query.selectedFlowId})</span>
+              </>
+            ) : null}
+          </p>
+        ) : null}
       </div>
       <button
         type="button"
@@ -160,12 +191,20 @@ export default function GatewayReconciliationCard({ intent }: Props) {
               </a>
             )}
           </div>
-          <p className="text-[11px] text-zinc-500">
+          <p className="text-[11px] leading-relaxed text-zinc-500">
             {data.reconciliation.txMatch === true
               ? `✓ ${text.match}`
               : data.reconciliation.txMatch === false
                 ? text.mismatch
-                : text.unknown}
+                : data.reconciliation.comparisonHintCode === "gateway_payment_required_local_funded"
+                  ? text.hintGatewayPending
+                  : data.reconciliation.comparisonHintCode === "gateway_no_tx_local_funded"
+                    ? text.hintGatewayNoTx
+                    : data.reconciliation.comparisonHintCode === "local_funding_tx_missing"
+                      ? text.hintLocalMissing
+                      : data.reconciliation.comparisonHintCode === "no_hashes_to_compare"
+                        ? text.hintNoHashes
+                        : text.unknown}
           </p>
           <div>
             <p className="payfi-label text-[10px]">{text.raw}</p>

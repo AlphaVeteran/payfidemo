@@ -191,16 +191,16 @@ export default function IntentDetail({ intentId }: Props) {
           <span className="text-zinc-600" aria-hidden>
             /
           </span>
-          <span className="text-zinc-300">{text.breadcrumbCurrent}</span>
+          <span className="text-zinc-400">{text.breadcrumbCurrent}</span>
         </nav>
         <div className="flex flex-wrap items-start gap-3">
           <PayFiLogo />
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold sm:text-xl">
+          <div className="min-w-0 flex-1 space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
               <span className="payfi-title-gradient">{text.title}</span>
-              <span className="text-zinc-100"> {text.detail}</span>
+              <span className="payfi-title-gradient"> {text.detail}</span>
             </h1>
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-sm leading-relaxed text-zinc-400">
               {text.perspective}：{role === "user" ? text.user : text.merchant}
             </p>
             <p className="mt-1 font-mono text-[10px] text-zinc-600 break-all">{intentId}</p>

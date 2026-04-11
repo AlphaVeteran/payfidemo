@@ -11,7 +11,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runMigrations } from "./db/migrate.js";
-import { closePgPool, getPgPool, isPersistenceEnabled } from "./db/pool.js";
+import { closePgPool, getDatabaseProductLabel, getPgPool, isPersistenceEnabled } from "./db/pool.js";
 import intentsRouter from "./routes/intents.js";
 import hashkeyWebhookRouter from "./routes/webhook.js";
 import { intentStore } from "./store/intentStore.js";
@@ -33,6 +33,7 @@ const webDir = path.resolve(__dirname, "../web");
 const API = "/api/payfi/v1";
 
 app.get("/health", (_req, res) => {
+  const pgOn = isPersistenceEnabled();
   res.json({
     ok: true,
     service: "payfidemo",
@@ -42,7 +43,9 @@ app.get("/health", (_req, res) => {
     chainMode: isChainMode(),
     chainRpc: process.env.CHAIN_RPC_URL || null,
     escrowConfigured: Boolean(process.env.ESCROW_ADDRESS?.trim()),
-    persistence: isPersistenceEnabled() ? "postgres" : "memory",
+    persistence: pgOn ? "postgres" : "memory",
+    /** 与 `DATABASE_URL` 协议对应之产品名，仅供展示 */
+    databaseProduct: pgOn ? getDatabaseProductLabel() : null,
   });
 });
 

@@ -32,7 +32,7 @@ export function defaultDemoAssetAddress(chainId: number): `0x${string}` {
   return ANVIL_DEFAULT_MOCK_ERC20_ADDRESS;
 }
 
-/** 创建意向表单用的 USDC 小数位：Base Sepolia / HashKey 测试网为 6；Anvil Mock 为 18 */
+/** 新建意向表单用的 USDC 小数位：Base Sepolia / HashKey 测试网为 6；Anvil Mock 为 18 */
 export function demoUsdcDecimals(chainId: number): number {
   if (chainId === baseSepolia.id || chainId === HASHKEY_TESTNET_CHAIN_ID) {
     return BASE_SEPOLIA_USDC_DECIMALS;

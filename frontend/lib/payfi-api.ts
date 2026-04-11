@@ -10,14 +10,32 @@ function apiFailMessage(
   return fallback;
 }
 
-const apiRoot = (): string => {
+/** 与 `apiRoot()` 同源，不含 `/api/payfi/v1`（用于 `/health`） */
+export const payfiHttpBase = (): string => {
   const base =
     typeof process.env.NEXT_PUBLIC_PAYFI_API_URL === "string" &&
     process.env.NEXT_PUBLIC_PAYFI_API_URL.length > 0
       ? process.env.NEXT_PUBLIC_PAYFI_API_URL.replace(/\/$/, "")
       : "http://127.0.0.1:8787";
-  return `${base}/api/payfi/v1`;
+  return base;
 };
+
+const apiRoot = (): string => `${payfiHttpBase()}/api/payfi/v1`;
+
+export type PayFiHealthResponse = {
+  ok: boolean;
+  /** 服务端 intent 存储：`postgres` 表示已连接数据库；`memory` 为进程内内存 */
+  persistence?: string;
+  /** 与 `DATABASE_URL` 协议对应之产品名（如 PostgreSQL、MySQL）；无库时为 `null` */
+  databaseProduct?: string | null;
+};
+
+export async function getPayFiHealth(): Promise<PayFiHealthResponse> {
+  const res = await fetch(`${payfiHttpBase()}/health`, { cache: "no-store" });
+  const data = (await res.json()) as PayFiHealthResponse;
+  if (!res.ok) throw new Error("health failed");
+  return data;
+}
 
 export type IntentRecord = {
   intentId: string;
@@ -44,10 +62,12 @@ export type IntentRecord = {
     termsVersion: string;
     disputeResolver?: string;
   };
-  /** 创建 intent 时可选；GET 返回中可能包含（不含 webhookSecret） */
+  /** 新建 intent 时可选；GET 返回中可能包含（不含 webhookSecret） */
   webhookUrl?: string;
   userSig?: string;
   merchantSig?: string;
+  /** ISO 时间；列表排序与「最新在前」依赖此字段 */
+  createdAt?: string;
 };
 
 export async function createIntent(body: Record<string, unknown>): Promise<{
@@ -256,9 +276,22 @@ export async function getSettlementOutboxEvents(): Promise<SettlementOutboxEvent
   return data.events ?? [];
 }
 
+/** Server explains why txMatch is null — not every case is an error (e.g. chain-funded escrow vs HSP checkout). */
+export type GatewayReconciliationHintCode =
+  | "gateway_payment_required_local_funded"
+  | "gateway_no_tx_local_funded"
+  | "local_funding_tx_missing"
+  | "no_hashes_to_compare";
+
 export type GatewayReconciliationResponse = {
   intentId: string;
-  query: { by: "payment_request_id"; paymentRequestId?: string } | { by: "cart_mandate_id"; cartMandateId?: string };
+  query: {
+    cartMandateId: string | null;
+    paymentRequestId: string | null;
+    lookupTried: ("cart_mandate_id" | "payment_request_id" | "flow_id")[];
+    lookupSelected: "cart_mandate_id" | "payment_request_id" | "flow_id";
+    selectedFlowId: string | null;
+  };
   local: {
     status: string;
     fundingTxHash: string | null;
@@ -274,6 +307,8 @@ export type GatewayReconciliationResponse = {
     txMatch: boolean | null;
     explorerGatewayTxUrl: string | null;
     explorerLocalTxUrl: string | null;
+    /** Omitted on older API builds; treat missing as null. */
+    comparisonHintCode?: GatewayReconciliationHintCode | null;
   };
 };
 

@@ -65,6 +65,20 @@ function fmt(n: bigint) {
   return n.toString();
 }
 
+const INTENT_LIST_PAGE_SIZE = 10;
+
+/** 最新在前（与 API 一致）；缺 createdAt 时退化为 intentId 字典序倒序 */
+function sortIntentsNewestFirst(list: IntentRecord[]): IntentRecord[] {
+  return [...list].sort((a, b) => {
+    const ta = a.createdAt != null ? Date.parse(a.createdAt) : NaN;
+    const tb = b.createdAt != null ? Date.parse(b.createdAt) : NaN;
+    const fa = Number.isFinite(ta) ? ta : 0;
+    const fb = Number.isFinite(tb) ? tb : 0;
+    if (fb !== fa) return fb - fa;
+    return b.intentId.localeCompare(a.intentId);
+  });
+}
+
 export default function MerchantConsole() {
   const { locale } = useI18n();
   const text = useMemo(() => {
@@ -96,9 +110,6 @@ export default function MerchantConsole() {
       refundedAmount: "已退款金额",
       allStatus: "全部状态",
       searchPlaceholder: "用户地址或 合同意向编号（intentId）",
-      detail: "合同意向详情",
-      openDetail: "打开详情页",
-      signWorkspace: "进入签名工作台",
       merchantSignHint:
         "在下方列表中选择一条合同意向后，可在此连接钱包并完成商家签名，以推进链上托管分期放款。",
       noEvents: "暂无事件，点击右上角刷新。",
@@ -108,7 +119,10 @@ export default function MerchantConsole() {
       locked: "托管中",
       notFoundUser: "未找到该用户记录。",
       deepLinkNotFound:
-        "找不到合同意向：{id}。请确认 NEXT_PUBLIC_PAYFI_API_URL 与创建该意向时相同（例如本地 http://127.0.0.1:8787 与 Railway 不可混用）。",
+        "找不到合同意向：{id}。请确认 NEXT_PUBLIC_PAYFI_API_URL 与新建该意向时相同（例如本地 http://127.0.0.1:8787 与 Railway 不可混用）。",
+      paginationPrev: "上一页",
+      paginationNext: "下一页",
+      paginationPage: "第 {page} / {total} 页",
     },
     "zh-TW": {
       title: "商家",
@@ -137,9 +151,6 @@ export default function MerchantConsole() {
       refundedAmount: "已退款金額",
       allStatus: "全部狀態",
       searchPlaceholder: "使用者地址或 合同意向編號（intentId）",
-      detail: "合同意向詳情",
-      openDetail: "開啟詳情頁",
-      signWorkspace: "進入簽名工作台",
       merchantSignHint:
         "在下方列表中選擇一筆合同意向後，可在此連接錢包並完成商家簽名，以推進鏈上託管分期放款。",
       noEvents: "暫無事件，點擊右上角刷新。",
@@ -149,7 +160,10 @@ export default function MerchantConsole() {
       locked: "託管中",
       notFoundUser: "未找到該使用者記錄。",
       deepLinkNotFound:
-        "找不到合同意向：{id}。請確認 NEXT_PUBLIC_PAYFI_API_URL 與建立該意向時相同（例如本機 http://127.0.0.1:8787 與 Railway 不可混用）。",
+        "找不到合同意向：{id}。請確認 NEXT_PUBLIC_PAYFI_API_URL 與新建該意向時相同（例如本機 http://127.0.0.1:8787 與 Railway 不可混用）。",
+      paginationPrev: "上一頁",
+      paginationNext: "下一頁",
+      paginationPage: "第 {page} / {total} 頁",
     },
     en: {
       title: "Merchant",
@@ -178,9 +192,6 @@ export default function MerchantConsole() {
       refundedAmount: "Refunded Amount",
       allStatus: "All Statuses",
       searchPlaceholder: "User address or Contract Intent ID (intentId)",
-      detail: "Contract Intent Details",
-      openDetail: "Open Details",
-      signWorkspace: "Open Signing Console",
       merchantSignHint:
         "Select a contract intent from the list below to connect a wallet and sign as merchant to advance on-chain escrow installment disbursement.",
       noEvents: "No events yet. Click Refresh above.",
@@ -191,6 +202,9 @@ export default function MerchantConsole() {
       notFoundUser: "No records found for this user.",
       deepLinkNotFound:
         "Contract intent not found: {id}. Ensure NEXT_PUBLIC_PAYFI_API_URL matches the API used when the intent was created (do not mix local :8787 and Railway).",
+      paginationPrev: "Previous",
+      paginationNext: "Next",
+      paginationPage: "Page {page} / {total}",
     },
   }[locale];
   }, [locale]);
@@ -198,6 +212,7 @@ export default function MerchantConsole() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [intents, setIntents] = useState<IntentRecord[]>([]);
+  const [intentListPage, setIntentListPage] = useState(1);
   const [events, setEvents] = useState<SettlementOutboxEvent[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [userFilter, setUserFilter] = useState("");
@@ -264,7 +279,7 @@ export default function MerchantConsole() {
         listIntents(),
         getSettlementOutboxEvents(),
       ]);
-      const ordered = rows.slice().reverse();
+      const ordered = sortIntentsNewestFirst(rows);
       setIntents(ordered);
       setEvents(outbox.slice().reverse());
 
@@ -273,7 +288,9 @@ export default function MerchantConsole() {
         try {
           const one = await getIntent(intentIdQuery);
           setIntents((prev) =>
-            prev.some((i) => i.intentId === one.intentId) ? prev : [one, ...prev],
+            prev.some((i) => i.intentId === one.intentId)
+              ? prev
+              : sortIntentsNewestFirst([...prev, one]),
           );
         } catch {
           setError(text.deepLinkNotFound.replace("{id}", intentIdQuery));
@@ -297,6 +314,26 @@ export default function MerchantConsole() {
     });
   }, [intents, statusFilter, userFilter]);
 
+  const intentListTotalPages = useMemo(() => {
+    const n = filteredIntents.length;
+    return Math.max(1, Math.ceil(n / INTENT_LIST_PAGE_SIZE));
+  }, [filteredIntents.length]);
+
+  const pagedFilteredIntents = useMemo(() => {
+    const start = (intentListPage - 1) * INTENT_LIST_PAGE_SIZE;
+    return filteredIntents.slice(start, start + INTENT_LIST_PAGE_SIZE);
+  }, [filteredIntents, intentListPage]);
+
+  useEffect(() => {
+    setIntentListPage(1);
+  }, [statusFilter, userFilter]);
+
+  useEffect(() => {
+    if (intentListPage > intentListTotalPages) {
+      setIntentListPage(intentListTotalPages);
+    }
+  }, [intentListPage, intentListTotalPages]);
+
   /** When search narrows to one row or pastes a full intentId, align selection (avoid showing another intent from ?intentId= or auto-select). */
   const filterIntentLookupRef = useRef<string | null>(null);
   useEffect(() => {
@@ -318,7 +355,9 @@ export default function MerchantConsole() {
       void getIntent(q)
         .then((one) => {
           setIntents((prev) =>
-            prev.some((i) => i.intentId === one.intentId) ? prev : [one, ...prev],
+            prev.some((i) => i.intentId === one.intentId)
+              ? prev
+              : sortIntentsNewestFirst([...prev, one]),
           );
           setSelectedIntentId(one.intentId);
         })
@@ -397,12 +436,12 @@ export default function MerchantConsole() {
       <header className="payfi-card flex flex-wrap items-start justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
           <PayFiLogo />
-          <div>
-            <h1 className="text-xl font-bold sm:text-2xl">
+          <div className="min-w-0 flex-1 space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
               <span className="payfi-title-gradient">{text.title}</span>
-              <span className="text-zinc-100"> {text.console}</span>
+              <span className="payfi-title-gradient"> {text.console}</span>
             </h1>
-            <p className="mt-1 text-xs text-zinc-500">{text.subtitle}</p>
+            <p className="mt-1 text-sm leading-relaxed text-zinc-400">{text.subtitle}</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 pr-20 sm:pr-32">
@@ -595,57 +634,61 @@ export default function MerchantConsole() {
             />
           </div>
           <div className="space-y-2">
-            {filteredIntents.map((i) => (
-              <button
+            {pagedFilteredIntents.map((i) => (
+              <div
                 key={i.intentId}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedIntentId(i.intentId)}
-                className={`payfi-card-hover w-full rounded-xl border px-3 py-3 text-left transition ${
-                  selectedIntentId === i.intentId
-                    ? "border-sky-500/40 bg-sky-500/5"
-                    : "border-white/8 bg-black/25"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedIntentId(i.intentId);
+                  }
+                }}
+                className={`payfi-card payfi-card-hover flex w-full cursor-pointer items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition ${
+                  selectedIntentId === i.intentId ? "ring-1 ring-inset ring-sky-500/45" : ""
                 }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-[11px] text-zinc-300">{i.intentId}</span>
-                  <span className="shrink-0 text-xs text-zinc-500">{statusText(i.status, locale)}</span>
-                </div>
-                <div className="mt-1 text-[11px] text-zinc-500">
-                  {i.user.slice(0, 10)}… | {i.releasedTotal}/{i.amountTotal}
-                </div>
-              </button>
+                <span className="truncate font-mono text-[11px] text-zinc-300">{i.intentId}</span>
+                <span className="shrink-0 text-xs text-zinc-500">{statusText(i.status, locale)}</span>
+              </div>
             ))}
           </div>
-          {selectedIntent && (
-            <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-4 text-sm">
-              <p className="font-semibold text-zinc-100">{text.detail}</p>
-              <p className="mt-2 font-mono text-[11px] text-zinc-400">{selectedIntent.intentId}</p>
-              <p className="font-mono text-[11px] text-zinc-400">{selectedIntent.user}</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                {statusText(selectedIntent.status, locale)} · {selectedIntent.releaseCount}/
-                {selectedIntent.maxReleases}
-              </p>
-              <div className="mt-4">
-                <GatewayReconciliationCard intent={selectedIntent} />
-              </div>
-              <Link
-                href={`/intent/${encodeURIComponent(selectedIntent.intentId)}?role=merchant`}
-                className="mt-3 inline-flex payfi-btn-secondary text-xs no-underline"
+          {filteredIntents.length > INTENT_LIST_PAGE_SIZE && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
+              <button
+                type="button"
+                disabled={intentListPage <= 1}
+                onClick={() => setIntentListPage((p) => Math.max(1, p - 1))}
+                className="payfi-btn-secondary text-xs"
               >
-                {text.openDetail}
-              </Link>
-              <Link
-                href={`/user?intentId=${encodeURIComponent(selectedIntent.intentId)}`}
-                className="mt-2 inline-flex payfi-btn-primary text-xs no-underline"
+                {text.paginationPrev}
+              </button>
+              <span className="text-xs text-zinc-500">
+                {text.paginationPage
+                  .replace("{page}", String(intentListPage))
+                  .replace("{total}", String(intentListTotalPages))}
+              </span>
+              <button
+                type="button"
+                disabled={intentListPage >= intentListTotalPages}
+                onClick={() =>
+                  setIntentListPage((p) => Math.min(intentListTotalPages, p + 1))
+                }
+                className="payfi-btn-secondary text-xs"
               >
-                {text.signWorkspace}
-              </Link>
+                {text.paginationNext}
+              </button>
             </div>
           )}
           {!selectedIntent ? (
             <p className="text-xs text-zinc-500">{text.merchantSignHint}</p>
           ) : (
-            <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
+            <>
+              <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
+              <GatewayReconciliationCard intent={selectedIntent} />
+            </>
           )}
         </section>
       )}
