@@ -17,7 +17,7 @@ const siteDescription =
   typeof process.env.NEXT_PUBLIC_SITE_DESCRIPTION === "string" &&
   process.env.NEXT_PUBLIC_SITE_DESCRIPTION.length > 0
     ? process.env.NEXT_PUBLIC_SITE_DESCRIPTION
-    : "PayFi 托管演示：Next.js + wagmi（HashKey / 测试网可配置）";
+    : "PayFi 演示：链上托管分期放款 · Next.js + wagmi（HashKey / 测试网可配置）";
 
 export const metadata: Metadata = {
   title: "PayFi demo",
@@ -33,6 +33,12 @@ export default function RootLayout({
     <html lang="zh-CN" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} payfi-app antialiased`}
+        style={{
+          margin: 0,
+          minHeight: "100vh",
+          backgroundColor: "#121212",
+          color: "#fafafa",
+        }}
       >
         <Providers>{children}</Providers>
       </body>

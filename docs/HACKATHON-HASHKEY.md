@@ -73,7 +73,8 @@ Step 6  退款演示（可选）    POST .../refund
 **工作内容**：
 
 1. 创建分支 `feat/hashkey-chain-hackathon`
-2. 复制 `.env.example`，新增以下变量：
+2. **推荐**：使用仓库内 **`.env.hashkey.testnet.example`**（已写死 **Chain 133**、**HashKey Testnet USDC `0x8FE3…`** 与 `NEXT_PUBLIC_*`），复制为 `.env.hashkey.testnet` 并填入密钥；或执行 `bash scripts/switch-env.sh hashkey`。勿与 Base Sepolia / Anvil 的 asset 混用。  
+3. 若仍从通用 `.env.example` 手搓，需保证与下表一致：
 
 ```bash
 # HashKey Chain Testnet
@@ -81,8 +82,8 @@ CHAIN_ID=133
 CHAIN_RPC_URL=https://testnet.hsk.xyz
 CHAIN_NETWORK=hashkey-testnet
 
-# USDC on HashKey Chain Testnet (官方文档地址)
-USDC_CONTRACT=0x79AEc4EeA31D50792F61D1Ca0733C18c89524C9e
+# USDC on HashKey Chain Testnet（测试网 Blockscout：USD Coin / FiatTokenProxy，6 decimals）
+USDC_CONTRACT=0x8FE3cB719Ee4410E236Cd6b72ab1fCDC06eF53c6
 
 # Escrow 合约（Phase 1 部署后填入）
 ESCROW_ADDRESS=
@@ -97,8 +98,8 @@ MERCHANT_NAME=PayFiDemo
 # OKX Wallet / 演示账户
 SUBMITTER_PRIVATE_KEY=
 
-# Blockscout
-BLOCKSCOUT_URL=https://hashkey.blockscout.com
+# Blockscout（Testnet；主网为 https://hashkey.blockscout.com）
+BLOCKSCOUT_URL=https://testnet-explorer.hsk.xyz
 ```
 
 3. 生成商户密钥对，**不提交私钥**：
@@ -169,7 +170,7 @@ forge script script/DeployPayFiEscrow.s.sol:DeployPayFiEscrow \
   --broadcast \
   --verify \
   --verifier blockscout \
-  --verifier-url https://hashkey.blockscout.com/api/
+  --verifier-url https://testnet-explorer.hsk.xyz/api/
 ```
 
 部署后将合约地址填入 `ESCROW_ADDRESS`。
@@ -579,7 +580,7 @@ async function connectOKX() {
         chainName: 'HashKey Chain Testnet',
         nativeCurrency: { name: 'HSK', symbol: 'HSK', decimals: 18 },
         rpcUrls: ['https://testnet.hsk.xyz'],
-        blockExplorerUrls: ['https://hashkey.blockscout.com'],
+        blockExplorerUrls: ['https://testnet-explorer.hsk.xyz'],
       }],
     });
   }

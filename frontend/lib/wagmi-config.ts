@@ -41,12 +41,12 @@ const hashKeyExplorerBase =
   typeof process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL === "string" &&
   process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL.length > 0
     ? process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL.replace(/\/$/, "")
-    : "https://hashkey.blockscout.com";
+    : "https://testnet-explorer.hsk.xyz";
 
 const hashKeyTestnet = defineChain({
   id: HASHKEY_TESTNET_CHAIN_ID,
   name: "HashKey Chain Testnet",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  nativeCurrency: { name: "HSK", symbol: "HSK", decimals: 18 },
   rpcUrls: {
     default: { http: [targetChainRpc ?? "https://testnet.hsk.xyz"] },
   },

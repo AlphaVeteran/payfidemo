@@ -6,6 +6,7 @@ cd "$ROOT_DIR"
 
 ENV_LOCAL_FILE=".env.local.anvil"
 ENV_HASHKEY_FILE=".env.hashkey.testnet"
+ENV_HASHKEY_TEMPLATE=".env.hashkey.testnet.example"
 ENV_HASHKEY_PRIVATE_FILE=".env.hashkey.private"
 
 usage() {
@@ -19,8 +20,8 @@ What it does:
   - local:
       - If `.env.local.anvil` does not exist yet, it copies current `.env` into it.
   - hashkey:
-      - If `.env.hashkey.testnet` does not exist yet, it copies `.env.example` into it.
-      - With `--refresh`, it re-copies `.env.example` overwriting `.env.hashkey.testnet`.
+      - If `.env.hashkey.testnet` does not exist yet, it copies `.env.hashkey.testnet.example` (Chain 133 + USDC pinned) into it; if missing, falls back to `.env.example`.
+      - With `--refresh`, it re-copies from the same template (fallback `.env.example`).
       - If `.env.hashkey.private` exists, it overlays those key=value pairs into `.env.hashkey.testnet`
         after copy, so secrets (APP_KEY/APP_SECRET, etc.) survive refresh.
 EOF
@@ -111,13 +112,21 @@ case "$mode" in
       fi
     fi
 
+    hashkey_template_copy() {
+      if [[ -f "$ENV_HASHKEY_TEMPLATE" ]]; then
+        echo "[switch-env] Using template $ENV_HASHKEY_TEMPLATE -> $ENV_HASHKEY_FILE"
+        cp "$ENV_HASHKEY_TEMPLATE" "$ENV_HASHKEY_FILE"
+      else
+        echo "[switch-env] WARNING: $ENV_HASHKEY_TEMPLATE missing; fallback .env.example" >&2
+        cp ".env.example" "$ENV_HASHKEY_FILE"
+      fi
+    }
     if [[ "$refresh" == "--refresh" ]]; then
-      echo "[switch-env] Refreshing $ENV_HASHKEY_FILE from .env.example"
-      cp ".env.example" "$ENV_HASHKEY_FILE"
+      hashkey_template_copy
     else
       if [[ ! -e "$ENV_HASHKEY_FILE" ]]; then
-        echo "[switch-env] Creating $ENV_HASHKEY_FILE from .env.example"
-        cp ".env.example" "$ENV_HASHKEY_FILE"
+        echo "[switch-env] Creating $ENV_HASHKEY_FILE from HashKey testnet template"
+        hashkey_template_copy
       fi
     fi
     overlay_env_file "$ENV_HASHKEY_FILE" "$ENV_HASHKEY_PRIVATE_FILE"

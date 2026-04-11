@@ -25,7 +25,7 @@ import {
   parseChainIdFromEnv,
 } from "../chain/config.js";
 import { parseEscrowCreatedFromReceipt } from "../chain/funding.js";
-import { createReusableOrder } from "../hashkey/client.js";
+import { createReusableOrder, queryMerchantPayments } from "../hashkey/client.js";
 
 const router = Router();
 
@@ -212,6 +212,81 @@ router.get("/:intentId/funding/hint", async (req, res) => {
   } catch (e) {
     res.status(500).json({
       error: "encode failed",
+      detail: e instanceof Error ? e.message : String(e),
+    });
+  }
+});
+
+/** HashKey Merchant GET /payments — dual-source reconciliation (HSP / gateway vs local intent + chain). */
+router.get("/:intentId/gateway-reconciliation", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  if (!row.hskCartMandateId?.trim() && !row.hskPaymentReqId?.trim()) {
+    res.status(400).json({
+      error: "no HashKey gateway ids on intent",
+      detail: "Create intent with HashKey reusable order enabled so hskCartMandateId / hskPaymentReqId are set.",
+    });
+    return;
+  }
+  try {
+    const preferPaymentReq = Boolean(row.hskPaymentReqId?.trim());
+    const { envelope, items } = await queryMerchantPayments(
+      preferPaymentReq
+        ? { paymentRequestId: row.hskPaymentReqId!.trim() }
+        : { cartMandateId: row.hskCartMandateId!.trim() },
+    );
+    if (envelope.code !== undefined && envelope.code !== 0) {
+      res.status(502).json({
+        error: "HashKey gateway returned error code",
+        code: envelope.code,
+        msg: envelope.msg,
+        intentId: row.intentId,
+      });
+      return;
+    }
+
+    const primary = items[0];
+    const gatewayTx = typeof primary?.tx_signature === "string" ? primary.tx_signature.trim() : "";
+    const localTx = row.fundingTxHash?.trim() ?? "";
+    const explorerBase =
+      process.env.BLOCKSCOUT_URL?.trim().replace(/\/$/, "") || "https://testnet-explorer.hsk.xyz";
+    const gatewayTxUrl =
+      gatewayTx && /^0x[a-fA-F0-9]{64}$/.test(gatewayTx) ? `${explorerBase}/tx/${gatewayTx}` : null;
+    const localTxUrl =
+      localTx && /^0x[a-fA-F0-9]{64}$/.test(localTx) ? `${explorerBase}/tx/${localTx}` : null;
+    const match =
+      gatewayTx && localTx
+        ? gatewayTx.toLowerCase() === localTx.toLowerCase()
+        : null;
+
+    res.json({
+      intentId: row.intentId,
+      query: preferPaymentReq
+        ? { by: "payment_request_id" as const, paymentRequestId: row.hskPaymentReqId }
+        : { by: "cart_mandate_id" as const, cartMandateId: row.hskCartMandateId },
+      local: {
+        status: row.status,
+        fundingTxHash: row.fundingTxHash,
+        escrowId: row.escrowId,
+      },
+      gateway: {
+        items,
+        primary: primary ?? null,
+      },
+      reconciliation: {
+        gatewayTxSignature: gatewayTx || null,
+        localFundingTxHash: localTx || null,
+        txMatch: match,
+        explorerGatewayTxUrl: gatewayTxUrl,
+        explorerLocalTxUrl: localTxUrl,
+      },
+    });
+  } catch (e) {
+    res.status(502).json({
+      error: "gateway reconciliation failed",
       detail: e instanceof Error ? e.message : String(e),
     });
   }
@@ -468,9 +543,10 @@ router.post("/:intentId/release/signatures", async (req, res) => {
     res.status(400).json({ error: "invalid signature format" });
     return;
   }
+  // 只更新对应角色；勿在保存用户签时清空商家签（否则「商家先签 → 用户后签」会丢失商家签）。
+  // 链上 nonce 变化时由 prepare 读链或 release/submit 成功路径上的 clearReleaseSignatures 统一清空。
   if (role === "user") {
     row.userSig = sig;
-    row.merchantSig = undefined;
   } else {
     row.merchantSig = sig;
   }
@@ -557,6 +633,22 @@ router.post("/:intentId/release/submit", async (req, res) => {
       }
 
       const walletClient = getSubmitterWallet();
+      try {
+        await publicClient.simulateContract({
+          address: escrowAddr,
+          abi: payFiEscrowAbi,
+          functionName: "releaseBySignatures",
+          args: [eid, per, finalUserSig as Hex, finalMerchantSig as Hex],
+          account: walletClient.account,
+        });
+      } catch (simErr) {
+        res.status(502).json({
+          error: "release submit failed",
+          detail: simErr instanceof Error ? simErr.message : String(simErr),
+        });
+        return;
+      }
+
       const hash = await walletClient.writeContract({
         address: escrowAddr,
         abi: payFiEscrowAbi,
@@ -565,7 +657,11 @@ router.post("/:intentId/release/submit", async (req, res) => {
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {
-        res.status(502).json({ error: "tx reverted", txHash: hash });
+        res.status(502).json({
+          error: "release submit failed",
+          detail: `transaction mined with failed status: ${hash}`,
+          txHash: hash,
+        });
         return;
       }
 

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* 让 Tailwind 扫描本项目的组件与路由，否则 dev 下可能只生成部分 CSS，页面会像「无样式」白底黑字 */
+@source "../components/**/*.{tsx,ts}";
+@source "./**/*.{tsx,ts}";
+
 :root {
   --payfi-bg: #121212;
   --payfi-surface: rgba(30, 30, 36, 0.75);

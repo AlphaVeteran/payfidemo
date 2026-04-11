@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
@@ -11,18 +11,20 @@ import {
   useDisconnect,
   useSwitchChain,
 } from "wagmi";
+import GatewayReconciliationCard from "@/components/merchant/gateway-reconciliation";
 import MerchantReleasePanel from "@/components/merchant/merchant-release-panel";
 import PayFiLogo from "@/components/ui/payfi-logo";
 import { useI18n } from "@/lib/i18n";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
 import {
+  getIntent,
   getSettlementOutboxEvents,
   listIntents,
   type IntentRecord,
   type SettlementOutboxEvent,
 } from "@/lib/payfi-api";
 
-type TabKey = "dashboard" | "intents" | "sign-release" | "history" | "spend";
+type TabKey = "dashboard" | "intents" | "history" | "spend";
 
 function statusText(status: string, locale: "zh-CN" | "zh-TW" | "en") {
   switch (status) {
@@ -65,16 +67,13 @@ function fmt(n: bigint) {
 
 export default function MerchantConsole() {
   const { locale } = useI18n();
-  const text = {
+  const text = useMemo(() => {
+    return {
     "zh-CN": {
       title: "商家",
       console: "控制台",
       subtitle: "合同意向 · 状态 · 历史 · 用户消费",
       home: "首页",
-      userSide: "用户端",
-      homeDesc: "返回角色入口与最近记录",
-      userSideDesc: "进入用户工作台进行签名与支付",
-      openCta: "进入 →",
       connectWallet: "连接钱包",
       connecting: "连接中…",
       chooseWallet: "选择钱包",
@@ -89,9 +88,6 @@ export default function MerchantConsole() {
       wrongChainNeed: "需",
       overview: "总览",
       intents: "合同意向",
-      signRelease: "商家签名与释放",
-      signReleaseHint: "仅展示可双签释放的合同意向（托管中 / 部分结算）。",
-      noReleasableIntents: "暂无可双签释放的合同意向。",
       history: "历史",
       spend: "消费",
       pending: "待支付",
@@ -103,23 +99,22 @@ export default function MerchantConsole() {
       detail: "合同意向详情",
       openDetail: "打开详情页",
       signWorkspace: "进入签名工作台",
-      merchantSignHint: "在下方列表中选择一条合同意向后，可在此连接钱包并完成商家签名。",
+      merchantSignHint:
+        "在下方列表中选择一条合同意向后，可在此连接钱包并完成商家签名，以推进链上托管分期放款。",
       noEvents: "暂无事件，点击右上角刷新。",
       userAddress: "用户地址（完整）",
       totalSpend: "累计消费",
       settled: "已结算",
       locked: "托管中",
       notFoundUser: "未找到该用户记录。",
+      deepLinkNotFound:
+        "找不到合同意向：{id}。请确认 NEXT_PUBLIC_PAYFI_API_URL 与创建该意向时相同（例如本地 http://127.0.0.1:8787 与 Railway 不可混用）。",
     },
     "zh-TW": {
       title: "商家",
       console: "控制台",
       subtitle: "合同意向 · 狀態 · 歷史 · 使用者消費",
       home: "首頁",
-      userSide: "使用者端",
-      homeDesc: "返回角色入口與最近記錄",
-      userSideDesc: "進入使用者工作台進行簽名與支付",
-      openCta: "進入 →",
       connectWallet: "連接錢包",
       connecting: "連接中…",
       chooseWallet: "選擇錢包",
@@ -134,9 +129,6 @@ export default function MerchantConsole() {
       wrongChainNeed: "需",
       overview: "總覽",
       intents: "合同意向",
-      signRelease: "商家簽名與釋放",
-      signReleaseHint: "僅顯示可雙簽釋放的合同意向（託管中 / 部分結算）。",
-      noReleasableIntents: "暫無可雙簽釋放的合同意向。",
       history: "歷史",
       spend: "消費",
       pending: "待支付",
@@ -148,23 +140,22 @@ export default function MerchantConsole() {
       detail: "合同意向詳情",
       openDetail: "開啟詳情頁",
       signWorkspace: "進入簽名工作台",
-      merchantSignHint: "在下方列表中選擇一筆合同意向後，可在此連接錢包並完成商家簽名。",
+      merchantSignHint:
+        "在下方列表中選擇一筆合同意向後，可在此連接錢包並完成商家簽名，以推進鏈上託管分期放款。",
       noEvents: "暫無事件，點擊右上角刷新。",
       userAddress: "使用者地址（完整）",
       totalSpend: "累計消費",
       settled: "已結算",
       locked: "託管中",
       notFoundUser: "未找到該使用者記錄。",
+      deepLinkNotFound:
+        "找不到合同意向：{id}。請確認 NEXT_PUBLIC_PAYFI_API_URL 與建立該意向時相同（例如本機 http://127.0.0.1:8787 與 Railway 不可混用）。",
     },
     en: {
       title: "Merchant",
       console: "Console",
       subtitle: "Contract Intents · Status · History · User Spend",
       home: "Home",
-      userSide: "User Side",
-      homeDesc: "Back to role entry and recent records",
-      userSideDesc: "Open user console for signing and payments",
-      openCta: "Open →",
       connectWallet: "Connect wallet",
       connecting: "Connecting…",
       chooseWallet: "Choose wallet",
@@ -179,9 +170,6 @@ export default function MerchantConsole() {
       wrongChainNeed: "need",
       overview: "Overview",
       intents: "Contract Intents",
-      signRelease: "Merchant Sign & Release",
-      signReleaseHint: "Only intents eligible for dual-sign release are listed (active / partially settled).",
-      noReleasableIntents: "No intents are currently eligible for merchant sign and release.",
       history: "History",
       spend: "Spend",
       pending: "Awaiting Funding",
@@ -193,16 +181,20 @@ export default function MerchantConsole() {
       detail: "Contract Intent Details",
       openDetail: "Open Details",
       signWorkspace: "Open Signing Console",
-      merchantSignHint: "Select a contract intent from the list below to connect a wallet and sign as merchant.",
+      merchantSignHint:
+        "Select a contract intent from the list below to connect a wallet and sign as merchant to advance on-chain escrow installment disbursement.",
       noEvents: "No events yet. Click Refresh above.",
       userAddress: "User address (full)",
       totalSpend: "Total Spend",
       settled: "Settled",
       locked: "In Escrow",
       notFoundUser: "No records found for this user.",
+      deepLinkNotFound:
+        "Contract intent not found: {id}. Ensure NEXT_PUBLIC_PAYFI_API_URL matches the API used when the intent was created (do not mix local :8787 and Railway).",
     },
   }[locale];
-  const [tab, setTab] = useState<TabKey>("dashboard");
+  }, [locale]);
+  const [tab, setTab] = useState<TabKey>("intents");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [intents, setIntents] = useState<IntentRecord[]>([]);
@@ -212,6 +204,7 @@ export default function MerchantConsole() {
   const [spendUser, setSpendUser] = useState("");
   const [selectedIntentId, setSelectedIntentId] = useState("");
   const searchParams = useSearchParams();
+  const intentIdQuery = searchParams.get("intentId")?.trim() ?? "";
   const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
   const { connect, connectors, isPending: connectPending } = useConnect();
@@ -237,7 +230,7 @@ export default function MerchantConsole() {
     const q = searchParams.get("intentId")?.trim();
     if (q) {
       setSelectedIntentId(q);
-      setTab("sign-release");
+      setTab("intents");
     }
   }, [searchParams]);
 
@@ -263,7 +256,7 @@ export default function MerchantConsole() {
     };
   }, [walletPickerOpen]);
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -271,14 +264,27 @@ export default function MerchantConsole() {
         listIntents(),
         getSettlementOutboxEvents(),
       ]);
-      setIntents(rows.slice().reverse());
+      const ordered = rows.slice().reverse();
+      setIntents(ordered);
       setEvents(outbox.slice().reverse());
+
+      // Deep link: list can be empty or miss the row (stale client / different query timing).
+      if (intentIdQuery && !ordered.some((r) => r.intentId === intentIdQuery)) {
+        try {
+          const one = await getIntent(intentIdQuery);
+          setIntents((prev) =>
+            prev.some((i) => i.intentId === one.intentId) ? prev : [one, ...prev],
+          );
+        } catch {
+          setError(text.deepLinkNotFound.replace("{id}", intentIdQuery));
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  };
+  }, [intentIdQuery, text]);
 
   const filteredIntents = useMemo(() => {
     return intents.filter((i) => {
@@ -290,6 +296,42 @@ export default function MerchantConsole() {
       return byStatus && byUser;
     });
   }, [intents, statusFilter, userFilter]);
+
+  /** When search narrows to one row or pastes a full intentId, align selection (avoid showing another intent from ?intentId= or auto-select). */
+  const filterIntentLookupRef = useRef<string | null>(null);
+  useEffect(() => {
+    const q = userFilter.trim();
+    const lower = q.toLowerCase();
+    if (!q) return;
+
+    const exact = intents.find((i) => i.intentId.toLowerCase() === lower);
+    if (exact) {
+      setSelectedIntentId(exact.intentId);
+      filterIntentLookupRef.current = null;
+      return;
+    }
+
+    const UUID_RE =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (UUID_RE.test(q) && filterIntentLookupRef.current !== lower) {
+      filterIntentLookupRef.current = lower;
+      void getIntent(q)
+        .then((one) => {
+          setIntents((prev) =>
+            prev.some((i) => i.intentId === one.intentId) ? prev : [one, ...prev],
+          );
+          setSelectedIntentId(one.intentId);
+        })
+        .catch(() => {
+          filterIntentLookupRef.current = null;
+        });
+      return;
+    }
+
+    if (filteredIntents.length === 1) {
+      setSelectedIntentId(filteredIntents[0]!.intentId);
+    }
+  }, [userFilter, intents, filteredIntents]);
 
   const metrics = useMemo(() => {
     let pending = 0;
@@ -328,14 +370,9 @@ export default function MerchantConsole() {
   const selectedIntent = selectedIntentId
     ? intents.find((i) => i.intentId === selectedIntentId) ?? null
     : null;
-  const releasableIntents = useMemo(
-    () => intents.filter((i) => i.status === "active" || i.status === "partially_settled"),
-    [intents],
-  );
-
   useEffect(() => {
     void reload();
-  }, []);
+  }, [reload]);
 
   useEffect(() => {
     if (selectedIntentId.trim()) return;
@@ -348,7 +385,15 @@ export default function MerchantConsole() {
   }, [intents, selectedIntentId]);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-[28rem] flex-col gap-6 px-4 pb-12 pt-6 sm:max-w-6xl sm:px-6">
+    <main className="mx-auto flex min-h-screen w-full max-w-[28rem] flex-col gap-6 px-4 pb-12 pt-4 sm:max-w-6xl sm:px-6">
+      <div className="sticky top-0 z-50 -mx-4 px-4 sm:-mx-6 sm:px-6">
+        <Link
+          href="/"
+          className="text-sm font-medium text-sky-400 hover:text-sky-300 hover:underline"
+        >
+          {text.home}
+        </Link>
+      </div>
       <header className="payfi-card flex flex-wrap items-start justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
           <PayFiLogo />
@@ -484,27 +529,13 @@ export default function MerchantConsole() {
         </div>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2">
-        <Link href="/" className="payfi-card payfi-card-hover p-4 text-left no-underline">
-          <h2 className="text-sm font-semibold text-zinc-100">{text.home}</h2>
-          <p className="mt-1 text-xs text-zinc-400">{text.homeDesc}</p>
-          <p className="mt-3 text-xs font-semibold text-sky-300">{text.openCta}</p>
-        </Link>
-        <Link href="/user" className="payfi-card payfi-card-hover p-4 text-left no-underline">
-          <h2 className="text-sm font-semibold text-zinc-100">{text.userSide}</h2>
-          <p className="mt-1 text-xs text-zinc-400">{text.userSideDesc}</p>
-          <p className="mt-3 text-xs font-semibold text-violet-300">{text.openCta}</p>
-        </Link>
-      </section>
-
       {error && <div className="payfi-alert-error">{error}</div>}
 
       <nav className="payfi-segment flex w-full flex-wrap justify-center sm:justify-start">
         {(
           [
-            ["dashboard", text.overview],
             ["intents", text.intents],
-            ["sign-release", text.signRelease],
+            ["dashboard", text.overview],
             ["history", text.history],
             ["spend", text.spend],
           ] as const
@@ -543,11 +574,6 @@ export default function MerchantConsole() {
 
       {tab === "intents" && (
         <section className="payfi-card space-y-4 p-5">
-          {!selectedIntent ? (
-            <p className="text-xs text-zinc-500">{text.merchantSignHint}</p>
-          ) : (
-            <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
-          )}
           <div className="flex flex-col gap-2 md:flex-row">
             <select
               value={statusFilter}
@@ -599,6 +625,9 @@ export default function MerchantConsole() {
                 {statusText(selectedIntent.status, locale)} · {selectedIntent.releaseCount}/
                 {selectedIntent.maxReleases}
               </p>
+              <div className="mt-4">
+                <GatewayReconciliationCard intent={selectedIntent} />
+              </div>
               <Link
                 href={`/intent/${encodeURIComponent(selectedIntent.intentId)}?role=merchant`}
                 className="mt-3 inline-flex payfi-btn-secondary text-xs no-underline"
@@ -612,6 +641,11 @@ export default function MerchantConsole() {
                 {text.signWorkspace}
               </Link>
             </div>
+          )}
+          {!selectedIntent ? (
+            <p className="text-xs text-zinc-500">{text.merchantSignHint}</p>
+          ) : (
+            <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
           )}
         </section>
       )}
@@ -635,45 +669,6 @@ export default function MerchantConsole() {
                 </pre>
               </div>
             ))
-          )}
-        </section>
-      )}
-
-      {tab === "sign-release" && (
-        <section className="payfi-card space-y-4 p-5">
-          <p className="text-xs text-zinc-500">{text.signReleaseHint}</p>
-          {!selectedIntent ? (
-            <p className="text-xs text-zinc-500">{text.merchantSignHint}</p>
-          ) : (
-            <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
-          )}
-          {releasableIntents.length === 0 ? (
-            <p className="text-sm text-zinc-500">{text.noReleasableIntents}</p>
-          ) : (
-            <div className="space-y-2">
-              {releasableIntents.map((i) => (
-                <button
-                  key={i.intentId}
-                  type="button"
-                  onClick={() => setSelectedIntentId(i.intentId)}
-                  className={`payfi-card-hover w-full rounded-xl border px-3 py-3 text-left transition ${
-                    selectedIntentId === i.intentId
-                      ? "border-sky-500/40 bg-sky-500/5"
-                      : "border-white/8 bg-black/25"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-mono text-[11px] text-zinc-300">{i.intentId}</span>
-                    <span className="shrink-0 text-xs text-zinc-500">
-                      {statusText(i.status, locale)}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-[11px] text-zinc-500">
-                    {i.user.slice(0, 10)}… | {i.releasedTotal}/{i.amountTotal}
-                  </div>
-                </button>
-              ))}
-            </div>
           )}
         </section>
       )}

@@ -4,7 +4,7 @@ import { HASHKEY_TESTNET_CHAIN_ID } from "@/lib/demo-network";
 function explorerBase(chainId: number): string | null {
   const fromEnv = process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL?.trim().replace(/\/$/, "");
   if (fromEnv) return fromEnv;
-  if (chainId === HASHKEY_TESTNET_CHAIN_ID) return "https://hashkey.blockscout.com";
+  if (chainId === HASHKEY_TESTNET_CHAIN_ID) return "https://testnet-explorer.hsk.xyz";
   if (chainId === baseSepolia.id) return "https://sepolia.basescan.org";
   return null;
 }

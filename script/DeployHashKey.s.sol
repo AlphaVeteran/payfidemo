@@ -6,7 +6,7 @@ import {PayFiEscrow} from "../contracts/PayFiEscrow.sol";
 
 /// @notice 部署到 HashKey Chain Testnet（或任意 RPC）；不依赖 MockERC20，链上 USDC 由环境配置使用。
 /// forge script script/DeployHashKey.s.sol:DeployHashKey --rpc-url $CHAIN_RPC_URL --broadcast
-/// 可选验证：--verify --verifier blockscout --verifier-url https://hashkey.blockscout.com/api/
+/// 可选验证：--verify --verifier blockscout --verifier-url https://testnet-explorer.hsk.xyz/api/
 contract DeployHashKey is Script {
     function run() external {
         uint256 pk = vm.envOr("SUBMITTER_PRIVATE_KEY", type(uint256).max);

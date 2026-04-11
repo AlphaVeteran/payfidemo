@@ -1,3 +1,15 @@
+/** 优先使用服务端 `detail`（链上 revert / viem 原因），避免泛型 `error` 盖住真实信息 */
+function apiFailMessage(
+  data: { error?: string; detail?: string },
+  fallback: string,
+): string {
+  const d = typeof data.detail === "string" ? data.detail.trim() : "";
+  const e = typeof data.error === "string" ? data.error.trim() : "";
+  if (d) return d;
+  if (e) return e;
+  return fallback;
+}
+
 const apiRoot = (): string => {
   const base =
     typeof process.env.NEXT_PUBLIC_PAYFI_API_URL === "string" &&
@@ -25,6 +37,8 @@ export type IntentRecord = {
   releaseNonce: number;
   paymentUrl?: string;
   hskPaymentReqId?: string;
+  /** HashKey cart_mandate_id（与网关 reusable 订单一致） */
+  hskCartMandateId?: string;
   anchor: {
     agreementHash: string;
     termsVersion: string;
@@ -105,7 +119,7 @@ export async function postFundingTx(
     },
   );
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || data.detail || "funding/tx failed");
+  if (!res.ok) throw new Error(apiFailMessage(data, "funding/tx failed"));
   return data;
 }
 
@@ -146,7 +160,7 @@ export async function releaseSubmit(
     },
   );
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || data.detail || "release submit failed");
+  if (!res.ok) throw new Error(apiFailMessage(data, "release submit failed"));
   return data;
 }
 
@@ -155,12 +169,30 @@ export async function getReleaseSignatures(intentId: string): Promise<{
   userSig: `0x${string}` | null;
   merchantSig: `0x${string}` | null;
 }> {
-  const res = await fetch(
-    `${apiRoot()}/intents/${encodeURIComponent(intentId)}/release/signatures`,
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "get release signatures failed");
-  return data;
+  const res = await fetch(`${apiRoot()}/intents/${encodeURIComponent(intentId)}/release/signatures`);
+  if (!res.ok) {
+    // Backward compatibility: older API versions may not have this endpoint yet.
+    if (res.status === 404) {
+      return { intentId, userSig: null, merchantSig: null };
+    }
+    let data: { error?: string } = {};
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body
+    }
+    throw new Error(data.error || "get release signatures failed");
+  }
+  const data = (await res.json()) as {
+    intentId?: string;
+    userSig?: `0x${string}` | null;
+    merchantSig?: `0x${string}` | null;
+  };
+  return {
+    intentId: data.intentId ?? intentId,
+    userSig: data.userSig ?? null,
+    merchantSig: data.merchantSig ?? null,
+  };
 }
 
 export async function saveReleaseSignature(
@@ -176,8 +208,24 @@ export async function saveReleaseSignature(
       body: JSON.stringify({ role, signature }),
     },
   );
+  if (!res.ok) {
+    // Backward compatibility: allow frontend to continue with local fallback.
+    if (res.status === 404) {
+      return {
+        ok: true,
+        userSig: role === "user" ? signature : null,
+        merchantSig: role === "merchant" ? signature : null,
+      };
+    }
+    let data: { error?: string } = {};
+    try {
+      data = await res.json();
+    } catch {
+      // non-JSON error body
+    }
+    throw new Error(data.error || "save release signature failed");
+  }
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "save release signature failed");
   return data;
 }
 
@@ -190,7 +238,7 @@ export async function refundIntent(
     body: JSON.stringify({}),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || data.detail || "refund failed");
+  if (!res.ok) throw new Error(apiFailMessage(data, "refund failed"));
   return data;
 }
 
@@ -206,4 +254,36 @@ export async function getSettlementOutboxEvents(): Promise<SettlementOutboxEvent
   const data: { events?: SettlementOutboxEvent[]; error?: string } = await res.json();
   if (!res.ok) throw new Error(data.error || "get settlement outbox failed");
   return data.events ?? [];
+}
+
+export type GatewayReconciliationResponse = {
+  intentId: string;
+  query: { by: "payment_request_id"; paymentRequestId?: string } | { by: "cart_mandate_id"; cartMandateId?: string };
+  local: {
+    status: string;
+    fundingTxHash: string | null;
+    escrowId: string | null;
+  };
+  gateway: {
+    items: Record<string, unknown>[];
+    primary: Record<string, unknown> | null;
+  };
+  reconciliation: {
+    gatewayTxSignature: string | null;
+    localFundingTxHash: string | null;
+    txMatch: boolean | null;
+    explorerGatewayTxUrl: string | null;
+    explorerLocalTxUrl: string | null;
+  };
+};
+
+export async function getGatewayReconciliation(
+  intentId: string,
+): Promise<GatewayReconciliationResponse> {
+  const res = await fetch(
+    `${apiRoot()}/intents/${encodeURIComponent(intentId)}/gateway-reconciliation`,
+  );
+  const data = (await res.json()) as GatewayReconciliationResponse & { error?: string; detail?: string };
+  if (!res.ok) throw new Error(data.detail || data.error || "gateway reconciliation failed");
+  return data;
 }

@@ -43,6 +43,21 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-11）
+
+【今日完成】
+- **产品叙事**：统一采用「**链上托管分期放款**」表述（中英繁：`layout` 默认站点说明、`role-entry` 首页卡片与 HashKey 提示、`payfi-demo` 创建意向与双签/提交/Webhook 相关文案、`merchant-release-panel`、`merchant-console` 商家签名区、`intent-detail` 金额进度与下一步指引）；英文主用语为 *on-chain escrow installment disbursement* / *installment disbursement*；链上与 API 字段名仍为 `release` 等，未改协议层。
+- **用户工作台布局**：`payfi-demo` 在公网测试网创建意向流程中，「托管总额 / 分期期数 / 托管周期」三处输入使用 `grid-cols-3` 单行并排，输入框加 `min-w-0` 以避免窄宽度下布局溢出。
+
+【代码证据】
+- `frontend/app/layout.tsx`
+- `frontend/components/home/role-entry.tsx`
+- `frontend/components/payfi-demo.tsx`
+- `frontend/components/intent/intent-detail.tsx`
+- `frontend/components/merchant/merchant-console.tsx`
+- `frontend/components/merchant/merchant-release-panel.tsx`
+- `WORKLOG.md`
+
 ## 当日记录（2026-04-10）
 
 【今日完成】

@@ -4,6 +4,7 @@ import { canonicalStringify } from "./canonical.js";
 import { buildMerchantJWT } from "./jwt.js";
 
 const HSK_REUSABLE_PATH = "/api/v1/merchant/orders/reusable";
+const HSK_PAYMENTS_QUERY_PATH = "/api/v1/merchant/payments";
 
 type ReusableOrderResponse = {
   data?: {
@@ -153,4 +154,93 @@ export async function createReusableOrder(input: {
     cartMandateId: contents.id,
     raw: data,
   };
+}
+
+/** Merchant manual: GET /api/v1/merchant/payments — exactly one filter. */
+export type MerchantPaymentItem = {
+  payment_request_id?: string;
+  request_id?: string;
+  cart_mandate_id?: string;
+  status?: string;
+  tx_signature?: string;
+  completed_at?: string;
+  chain?: string;
+  network?: string;
+  amount?: string;
+  token?: string;
+  risk_level?: string;
+  payer_address?: string;
+  created_at?: string;
+  [key: string]: unknown;
+};
+
+export type MerchantPaymentsEnvelope = {
+  code?: number;
+  msg?: string;
+  data?: unknown;
+};
+
+function normalizePaymentRows(data: unknown): MerchantPaymentItem[] {
+  if (data == null) return [];
+  if (Array.isArray(data)) return data as MerchantPaymentItem[];
+  if (typeof data === "object" && data !== null && "list" in data) {
+    const list = (data as { list?: unknown }).list;
+    if (Array.isArray(list)) return list as MerchantPaymentItem[];
+  }
+  return [data as MerchantPaymentItem];
+}
+
+export async function queryMerchantPayments(params: {
+  cartMandateId?: string;
+  paymentRequestId?: string;
+  flowId?: string;
+}): Promise<{ envelope: MerchantPaymentsEnvelope; items: MerchantPaymentItem[] }> {
+  const { cartMandateId, paymentRequestId, flowId } = params;
+  const filters = [
+    cartMandateId != null && cartMandateId !== "" ? (["cart_mandate_id", cartMandateId] as const) : null,
+    paymentRequestId != null && paymentRequestId !== ""
+      ? (["payment_request_id", paymentRequestId] as const)
+      : null,
+    flowId != null && flowId !== "" ? (["flow_id", flowId] as const) : null,
+  ].filter(Boolean) as [string, string][];
+
+  if (filters.length !== 1) {
+    throw new Error("Provide exactly one of cartMandateId, paymentRequestId, or flowId");
+  }
+
+  const sp = new URLSearchParams([filters[0]!]);
+  const query = `?${sp.toString()}`;
+
+  const baseUrl = process.env.HASHKEY_BASE_URL?.trim();
+  const appKey = process.env.APP_KEY?.trim();
+  const appSecret = process.env.APP_SECRET?.trim();
+  if (!baseUrl) throw new Error("HASHKEY_BASE_URL is required");
+  if (!appKey) throw new Error("APP_KEY is required");
+  if (!appSecret) throw new Error("APP_SECRET is required");
+
+  const headers = buildHmacHeaders({
+    method: "GET",
+    path: HSK_PAYMENTS_QUERY_PATH,
+    query,
+    body: "",
+    appKey,
+    appSecret,
+  });
+
+  const res = await fetch(`${baseUrl}${HSK_PAYMENTS_QUERY_PATH}${query}`, {
+    method: "GET",
+    headers,
+  });
+  const text = await res.text();
+  let envelope: MerchantPaymentsEnvelope;
+  try {
+    envelope = JSON.parse(text) as MerchantPaymentsEnvelope;
+  } catch {
+    throw new Error(`HashKey payments API returned non-JSON (${res.status}): ${text.slice(0, 500)}`);
+  }
+  if (!res.ok) {
+    throw new Error(`HashKey payments API error ${res.status}: ${text.slice(0, 800)}`);
+  }
+  const items = normalizePaymentRows(envelope.data);
+  return { envelope, items };
 }
