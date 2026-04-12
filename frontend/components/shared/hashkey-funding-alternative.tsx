@@ -38,13 +38,13 @@ export default function HashkeyFundingAlternative({
 
   return (
     <div className="mt-4 space-y-3">
-      <p className="border-t border-white/10 pt-3 text-center text-[11px] leading-relaxed text-zinc-500">
-        {labels.eitherOrNote}
-      </p>
-      <div className="rounded-xl border border-amber-500/25 bg-gradient-to-b from-amber-500/[0.08] to-emerald-500/[0.06] p-4">
-        <p className="text-sm font-semibold text-zinc-100">{labels.cardTitle}</p>
+      <p className="text-[11px] leading-relaxed text-zinc-500">{labels.eitherOrNote}</p>
+      <div className="space-y-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-4">
+        <div>
+          <p className="text-sm font-semibold text-emerald-100/95">{labels.cardTitle}</p>
+        </div>
 
-        <div className="mt-4 space-y-2">
+        <div className="rounded-lg border border-white/8 bg-black/35 px-2 py-2">
           <p className="payfi-label text-[10px]">{labels.gatewayTitle}</p>
           {paymentUrl?.trim() ? (
             <a
@@ -53,20 +53,20 @@ export default function HashkeyFundingAlternative({
               rel="noopener noreferrer"
               aria-disabled={Boolean(busy)}
               tabIndex={busy ? -1 : undefined}
-              className={`payfi-btn-primary inline-flex text-center no-underline ${
+              className={`payfi-btn-secondary mt-2 inline-flex text-center text-xs no-underline ${
                 busy ? "pointer-events-none opacity-45" : ""
               }`}
             >
               {labels.gatewayOpen}
             </a>
           ) : (
-            <p className="text-xs text-zinc-500">{labels.noPaymentUrl}</p>
+            <p className="mt-2 text-xs text-zinc-500">{labels.noPaymentUrl}</p>
           )}
         </div>
 
-        <div className="mt-4 border-t border-white/10 pt-4">
-          <p className="text-sm font-medium text-emerald-100/90">{labels.registerTitle}</p>
-          <p className="mt-1 text-xs leading-relaxed text-zinc-500">{labels.registerHint}</p>
+        <div className="rounded-lg border border-white/8 bg-black/35 px-2 py-2">
+          <p className="payfi-label text-[10px]">{labels.registerTitle}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">{labels.registerHint}</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-stretch">
             <input
               type="text"
@@ -81,7 +81,7 @@ export default function HashkeyFundingAlternative({
               type="button"
               disabled={Boolean(busy) || !registerTxValue.trim()}
               onClick={() => void onRegisterSubmit()}
-              className="payfi-btn-secondary shrink-0 whitespace-nowrap"
+              className="payfi-btn-secondary shrink-0 whitespace-nowrap text-xs"
             >
               {registering ? labels.registerBusy : labels.registerSubmit}
             </button>

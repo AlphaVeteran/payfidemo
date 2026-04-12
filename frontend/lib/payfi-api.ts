@@ -66,6 +66,9 @@ export type IntentRecord = {
   webhookUrl?: string;
   userSig?: string;
   merchantSig?: string;
+  /** ISO 8601：服务端保存签名时写入 */
+  userSigAt?: string;
+  merchantSigAt?: string;
   /** ISO 时间；列表排序与「最新在前」依赖此字段 */
   createdAt?: string;
 };
@@ -188,12 +191,14 @@ export async function getReleaseSignatures(intentId: string): Promise<{
   intentId: string;
   userSig: `0x${string}` | null;
   merchantSig: `0x${string}` | null;
+  userSigAt: string | null;
+  merchantSigAt: string | null;
 }> {
   const res = await fetch(`${apiRoot()}/intents/${encodeURIComponent(intentId)}/release/signatures`);
   if (!res.ok) {
     // Backward compatibility: older API versions may not have this endpoint yet.
     if (res.status === 404) {
-      return { intentId, userSig: null, merchantSig: null };
+      return { intentId, userSig: null, merchantSig: null, userSigAt: null, merchantSigAt: null };
     }
     let data: { error?: string } = {};
     try {
@@ -207,11 +212,15 @@ export async function getReleaseSignatures(intentId: string): Promise<{
     intentId?: string;
     userSig?: `0x${string}` | null;
     merchantSig?: `0x${string}` | null;
+    userSigAt?: string | null;
+    merchantSigAt?: string | null;
   };
   return {
     intentId: data.intentId ?? intentId,
     userSig: data.userSig ?? null,
     merchantSig: data.merchantSig ?? null,
+    userSigAt: data.userSigAt ?? null,
+    merchantSigAt: data.merchantSigAt ?? null,
   };
 }
 
@@ -219,7 +228,13 @@ export async function saveReleaseSignature(
   intentId: string,
   role: "user" | "merchant",
   signature: `0x${string}`,
-): Promise<{ ok: boolean; userSig: `0x${string}` | null; merchantSig: `0x${string}` | null }> {
+): Promise<{
+  ok: boolean;
+  userSig: `0x${string}` | null;
+  merchantSig: `0x${string}` | null;
+  userSigAt?: string | null;
+  merchantSigAt?: string | null;
+}> {
   const res = await fetch(
     `${apiRoot()}/intents/${encodeURIComponent(intentId)}/release/signatures`,
     {
@@ -235,6 +250,8 @@ export async function saveReleaseSignature(
         ok: true,
         userSig: role === "user" ? signature : null,
         merchantSig: role === "merchant" ? signature : null,
+        userSigAt: null,
+        merchantSigAt: null,
       };
     }
     let data: { error?: string } = {};
@@ -245,8 +262,20 @@ export async function saveReleaseSignature(
     }
     throw new Error(data.error || "save release signature failed");
   }
-  const data = await res.json();
-  return data;
+  const data = (await res.json()) as {
+    ok?: boolean;
+    userSig?: `0x${string}` | null;
+    merchantSig?: `0x${string}` | null;
+    userSigAt?: string | null;
+    merchantSigAt?: string | null;
+  };
+  return {
+    ok: data.ok ?? true,
+    userSig: data.userSig ?? null,
+    merchantSig: data.merchantSig ?? null,
+    userSigAt: data.userSigAt ?? null,
+    merchantSigAt: data.merchantSigAt ?? null,
+  };
 }
 
 export async function refundIntent(

@@ -39,7 +39,9 @@ export default function RoleEntry() {
   const targetChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID);
   const showHashKeyHomeCards = targetChainId === HASHKEY_TESTNET_CHAIN_ID;
   const hashKeyUsdcAddress = defaultDemoAssetAddress(HASHKEY_TESTNET_CHAIN_ID);
-  const demoMerchantEnv = process.env.NEXT_PUBLIC_DEMO_MERCHANT?.trim() ?? "";
+  const escrowAddressEnv = process.env.NEXT_PUBLIC_ESCROW_ADDRESS?.trim() ?? "";
+  const hashkeyGatewayUrlEnv =
+    process.env.NEXT_PUBLIC_HASHKEY_MERCHANT_GATEWAY_URL?.trim() ?? "";
 
   const text = {
     "zh-CN": {
@@ -55,13 +57,14 @@ export default function RoleEntry() {
       recent: "最近记录",
       empty: "暂无记录",
       hashKeyCardTitle: "HashKey 测试网",
-      currentSystemTitle: "当前系统",
+      currentSystemTitle: "payfidemo当前运行环境",
       persistenceLayerLabel: "持久化层",
       persistenceInMemory: "进程内内存（未连接数据库）",
       persistenceUnreachable: "无法获取（API 不可达）",
-      usdcContractLabel: "测试网 USDC 合约",
-      demoMerchantLabel: "NEXT_PUBLIC_DEMO_MERCHANT",
-      demoMerchantUnset: "（当前未配置）",
+      usdcContractLabel: "USDC代币地址",
+      escrowContractLabel: "托管合约地址",
+      hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
+      valueUnset: "（当前未配置）",
     },
     "zh-TW": {
       subtitle: "選擇角色進入流程，或在下方最近記錄中開啟已有意向。",
@@ -76,13 +79,14 @@ export default function RoleEntry() {
       recent: "最近記錄",
       empty: "暫無記錄",
       hashKeyCardTitle: "HashKey 測試網",
-      currentSystemTitle: "目前系統",
+      currentSystemTitle: "payfidemo 目前執行環境",
       persistenceLayerLabel: "持久化層",
       persistenceInMemory: "程序內記憶體（未連線資料庫）",
       persistenceUnreachable: "無法取得（API 無法連線）",
-      usdcContractLabel: "測試網 USDC 合約",
-      demoMerchantLabel: "NEXT_PUBLIC_DEMO_MERCHANT",
-      demoMerchantUnset: "（目前未設定）",
+      usdcContractLabel: "USDC 代幣地址",
+      escrowContractLabel: "託管合約地址",
+      hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
+      valueUnset: "（目前未設定）",
     },
     en: {
       subtitle:
@@ -98,13 +102,14 @@ export default function RoleEntry() {
       recent: "Recent Records",
       empty: "No records yet",
       hashKeyCardTitle: "HashKey Testnet",
-      currentSystemTitle: "Current system",
+      currentSystemTitle: "payfidemo current runtime environment",
       persistenceLayerLabel: "Persistence layer",
       persistenceInMemory: "In-memory store (no database)",
       persistenceUnreachable: "Unavailable (API unreachable)",
-      usdcContractLabel: "Testnet USDC contract",
-      demoMerchantLabel: "NEXT_PUBLIC_DEMO_MERCHANT",
-      demoMerchantUnset: "(not set)",
+      usdcContractLabel: "USDC token address",
+      escrowContractLabel: "Escrow contract address",
+      hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
+      valueUnset: "(not set)",
     },
   }[locale];
   const [role, setRole] = useState<Role>("user");
@@ -182,9 +187,15 @@ export default function RoleEntry() {
             <p className="break-all font-mono text-[11px] text-zinc-400">{hashKeyUsdcAddress}</p>
           </div>
           <div className="space-y-1 text-xs">
-            <p className="payfi-label">{text.demoMerchantLabel}</p>
+            <p className="payfi-label">{text.escrowContractLabel}</p>
             <p className="break-all font-mono text-[11px] text-zinc-400">
-              {demoMerchantEnv || text.demoMerchantUnset}
+              {escrowAddressEnv || text.valueUnset}
+            </p>
+          </div>
+          <div className="space-y-1 text-xs">
+            <p className="payfi-label">{text.hashKeyGatewayLabel}</p>
+            <p className="break-all font-mono text-[11px] text-zinc-400">
+              {hashkeyGatewayUrlEnv || text.valueUnset}
             </p>
           </div>
         </section>

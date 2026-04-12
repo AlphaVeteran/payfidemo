@@ -69,6 +69,8 @@ function anchorFromBody(b: CreateIntentBody) {
 function clearReleaseSignatures(row: IntentRecord) {
   row.userSig = undefined;
   row.merchantSig = undefined;
+  row.userSigAt = undefined;
+  row.merchantSigAt = undefined;
 }
 
 router.post("/", async (req, res) => {
@@ -702,6 +704,8 @@ router.get("/:intentId/release/signatures", async (req, res) => {
     intentId: row.intentId,
     userSig: row.userSig ?? null,
     merchantSig: row.merchantSig ?? null,
+    userSigAt: row.userSigAt ?? null,
+    merchantSigAt: row.merchantSigAt ?? null,
   });
 });
 
@@ -723,10 +727,13 @@ router.post("/:intentId/release/signatures", async (req, res) => {
   }
   // 只更新对应角色；勿在保存用户签时清空商家签（否则「商家先签 → 用户后签」会丢失商家签）。
   // 链上 nonce 变化时由 prepare 读链或 release/submit 成功路径上的 clearReleaseSignatures 统一清空。
+  const savedAt = new Date().toISOString();
   if (role === "user") {
     row.userSig = sig;
+    row.userSigAt = savedAt;
   } else {
     row.merchantSig = sig;
+    row.merchantSigAt = savedAt;
   }
   await intentStore.saveIntent(row);
   res.json({
@@ -734,6 +741,8 @@ router.post("/:intentId/release/signatures", async (req, res) => {
     intentId: row.intentId,
     userSig: row.userSig ?? null,
     merchantSig: row.merchantSig ?? null,
+    userSigAt: row.userSigAt ?? null,
+    merchantSigAt: row.merchantSigAt ?? null,
   });
 });
 

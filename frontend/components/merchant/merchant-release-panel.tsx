@@ -58,11 +58,15 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         "链上与本地 releaseNonce 不一致（可能本轮分期放款已在链上成功，或签名仍对应旧 nonce）。界面已清空缓存签名：请让用户在用户工作台按最新 nonce 重新签名 → 商家再签 → 再手动提交分期放款。分期放款不会自动上链。",
       wrongStatus: "当前意向状态不需要商家签名（需托管中或部分结算）。",
       noIntent: "请从上方列表选择一个合同意向。",
-      sigPreview: "签名状态",
-      userSig: "userSig",
-      merchantSig: "merchantSig",
       hintCardTitle: "操作提示",
       intentFactsTitle: "合同意向详情",
+      userSignRole: "用户签名",
+      merchantSignRole: "商家签名",
+      pendingSign: "待签名",
+      timeUnknown: "—",
+      amountsSection: "金额",
+      amountUnitUsdc: "USDC",
+      amountUnitMock: "Mock",
       refreshContract: "刷新合同",
     },
     "zh-TW": {
@@ -98,11 +102,15 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         "鏈上與本地 releaseNonce 不一致（可能本輪分期放款已在鏈上成功，或簽名仍對應舊 nonce）。介面已清空快取簽名：請讓使用者於使用者工作台依最新 nonce 重新簽名 → 商家再簽 → 再手動提交分期放款。分期放款不會自動上鏈。",
       wrongStatus: "目前合同意向狀態不需要商家簽名（需託管中或部分結算）。",
       noIntent: "請從上方列表選擇一個合同意向。",
-      sigPreview: "簽名狀態",
-      userSig: "userSig",
-      merchantSig: "merchantSig",
       hintCardTitle: "操作提示",
       intentFactsTitle: "合同意向詳情",
+      userSignRole: "使用者簽名",
+      merchantSignRole: "商家簽名",
+      pendingSign: "待簽名",
+      timeUnknown: "—",
+      amountsSection: "金額",
+      amountUnitUsdc: "USDC",
+      amountUnitMock: "Mock",
       refreshContract: "刷新合同",
     },
     en: {
@@ -139,11 +147,15 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         "releaseNonce mismatch (this installment may already be disbursed on-chain, or signatures were for an older nonce). Cached signatures cleared—user signs again on User console for the current nonce, then merchant, then submit manually. Disbursement is not automatic.",
       wrongStatus: "This intent does not need a merchant signature (must be active or partially settled).",
       noIntent: "Select a contract intent from the list above.",
-      sigPreview: "Signatures",
-      userSig: "userSig",
-      merchantSig: "merchantSig",
       hintCardTitle: "Notices",
       intentFactsTitle: "Intent details",
+      userSignRole: "User signature",
+      merchantSignRole: "Merchant signature",
+      pendingSign: "Pending",
+      timeUnknown: "—",
+      amountsSection: "Amounts",
+      amountUnitUsdc: "USDC",
+      amountUnitMock: "Mock",
       refreshContract: "Refresh contract",
     },
   }[locale];
@@ -315,6 +327,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       }
       setReleasePrep(prep);
       await saveReleaseSignature(intent.intentId, "merchant", sig);
+      await onIntentRefresh();
       const sigs = await getReleaseSignatures(intent.intentId);
       setUserSig(sigs.userSig);
       setMerchantSig(sigs.merchantSig ?? sig);
@@ -424,6 +437,32 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">{text.lead}</p>
       </div>
 
+      <DualSignIntentFacts
+        intent={intent}
+        chainId={targetChainId}
+        locale={locale}
+        onRefresh={() => void onIntentRefresh()}
+        labels={{
+          title: text.intentFactsTitle,
+          contractIntentId: text.contractIntentId,
+          userAddress: text.userAddress,
+          merchantAddress: text.expectedMerchant,
+          releaseProgressLabel: text.releaseProgressLabel,
+          escrowTotal: text.escrowTotal,
+          merchantReceived: text.merchantReceived,
+          userEscrowAmount: text.userEscrowAmount,
+          releaseNonce: text.releaseNonce,
+          refreshContract: text.refreshContract,
+          userSignRole: text.userSignRole,
+          merchantSignRole: text.merchantSignRole,
+          pendingSign: text.pendingSign,
+          timeUnknown: text.timeUnknown,
+          amountsSection: text.amountsSection,
+          amountUnitUsdc: text.amountUnitUsdc,
+          amountUnitMock: text.amountUnitMock,
+        }}
+      />
+
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -449,32 +488,6 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       </div>
 
       <p className="text-[11px] leading-relaxed text-zinc-500">{text.releaseManualNote}</p>
-
-      <div className="grid gap-1 font-mono text-[11px] text-zinc-500">
-        <span>
-          {text.userSig}: {displayUserSig ? `${displayUserSig.slice(0, 18)}…` : "—"}
-        </span>
-        <span>
-          {text.merchantSig}: {displayMerchantSig ? `${displayMerchantSig.slice(0, 18)}…` : "—"}
-        </span>
-      </div>
-
-      <DualSignIntentFacts
-        intent={intent}
-        onRefresh={() => void onIntentRefresh()}
-        labels={{
-          title: text.intentFactsTitle,
-          contractIntentId: text.contractIntentId,
-          userAddress: text.userAddress,
-          merchantAddress: text.expectedMerchant,
-          releaseProgressLabel: text.releaseProgressLabel,
-          escrowTotal: text.escrowTotal,
-          merchantReceived: text.merchantReceived,
-          userEscrowAmount: text.userEscrowAmount,
-          releaseNonce: text.releaseNonce,
-          refreshContract: text.refreshContract,
-        }}
-      />
 
       {((!displayUserSig && !hint) || hint || releaseSubmitCooldown) && (
         <aside

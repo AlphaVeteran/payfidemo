@@ -49,18 +49,25 @@
 ## 当日记录（2026-04-12）
 
 【今日完成】
-- **用户工作台（`payfi-demo`）**：「刷新合同意向」改为「查询合同意向」，按钮位于 intentId 输入框左侧；移除「高级选项（Webhook）」整块；合同意向编号与查询区独立成卡并置于「新建托管合同意向」表单之上；界面用语「创建」统一为「新建」（含 `docs/payfidemo_flow_zh.html` 图示文案、`frontend/.env.example` 等）；顶栏移除链横幅 / HSP 手册链接 / API 地址三行，仅保留 Logo 与渐变标题（与商家、详情页头部风格一致）；删除仅用于上述展示的无用文案键与 `payfiApiDisplay`。
-- **首页（`role-entry`）**：移除「继续上次流程」卡片；HashKey 钱包说明与 USDC/商家环境变量合并为单卡「HashKey 测试网」，`AddHashKeyNetworkButton` 增加 `compact`（无引导段与 Chain ID 脚注）；新增「当前系统」卡：CHAIN_ID、CHAIN_RPC_URL、Frontend URL、API URL、持久化层（`getPayFiHealth`）；「用户 / 商家」分段控件移至「我是商家」卡片之后。
+- **用户工作台（`payfi-demo`）**：「刷新合同意向」改为「查询合同意向」，按钮位于 intentId 输入框左侧；移除「高级选项（Webhook）」整块；合同意向编号与查询区独立成卡并置于「新建托管合同意向」表单之上；界面用语「创建」统一为「新建」（含 `docs/payfidemo_flow_zh.html` 图示文案、`frontend/.env.example` 等）；顶栏移除链横幅 / HSP 手册链接 / API 地址三行，仅保留 Logo 与渐变标题（与商家、详情页头部风格一致）；删除仅用于上述展示的无用文案键与 `payfiApiDisplay`。后续迭代：链上入金预检、HashKey 收银台与双签释放区展示与交互（与 `merchant-release-panel`、`dual-sign-intent-facts`、`hashkey-funding-alternative` 等对齐）。
+- **首页（`role-entry`）**：移除「继续上次流程」卡片；HashKey 单卡「HashKey 测试网」：`AddHashKeyNetworkButton` 的 `compact`；展示 **USDC 代币地址**、**托管合约**（`NEXT_PUBLIC_ESCROW_ADDRESS`）、**HashKey Merchant Gateway URL**（`NEXT_PUBLIC_HASHKEY_MERCHANT_GATEWAY_URL`）；下方环境卡标题为 **「payfidemo当前运行环境」**（繁/英对应）；字段含 CHAIN_ID、CHAIN_RPC_URL、Frontend URL、API URL、持久化层；卡内不再展示 `NEXT_PUBLIC_DEMO_MERCHANT`（该变量仍可仅用于表单默认商家）。「用户 / 商家」分段控件在「我是商家」卡片之后。
+- **支付回跳与托管登记**：新增 **`/payment/result`**（`intentId` query）；`pickTxHashFromSearchParams` + **`normalizeLooseTxHash`**；若 URL 无链上哈希则请求 **`GET .../gateway-reconciliation`**，用商户 **`gatewayTxSignature`** 与本地 **`fundingTxHash`** 自动 **`POST .../funding/tx`** 或提示已登记。后端 **`appendIntentIdToRedirectUrl`** 与 **`HASHKEY_REDIRECT_URL` / `BASE_URL`** 行为保持文档化（见 env 示例）。
+- **HashKey 环境与脚本**：**`.env.hashkey.testnet.example`** 分节整理；说明 **`HASHKEY_REDIRECT_URL` 优先于 `BASE_URL`**、**`.env.hashkey.private` overlay** 会覆盖同名键（曾导致回跳指向线上 `/user`）；**`scripts/switch-env.sh`** 仓库内 **`chmod +x`** 可直连执行；**`docs/CHECKLIST-env-hashkey-local-neon.md`**、根 **`.env.example`** 同步用语。
+- **双签元数据**：`IntentRecord` 增加 **`userSigAt` / `merchantSigAt`**（ISO 8601）；`POST/GET .../release/signatures` 返回与清空逻辑一致。
 - **商家控制台（`merchant-console`）**：合同意向列表行样式对齐首页「最近记录」；「全部状态」与搜索框紧贴列表上方，签名区与网关对账在列表与分页之后。
 - **详情页（`intent-detail`）**：标题与面包屑层级与首页一致（渐变标题、`text-zinc-400` 等）。
 - **后端 `/health`**：响应增加 `databaseProduct`（`getDatabaseProductLabel` 按 `DATABASE_URL` 协议推断 PostgreSQL / MySQL 等展示名，不暴露连接串）。
-- **前端 `payfi-api`**：导出 `payfiHttpBase`、`getPayFiHealth`；`token-addresses` 等注释用语与「新建」一致。
+- **前端 `payfi-api`**：导出 `payfiHttpBase`、`getPayFiHealth`、`getGatewayReconciliation` 等；`token-addresses` 等注释用语与「新建」一致。
 
 【代码证据】
-- `frontend/components/payfi-demo.tsx`、`frontend/components/home/role-entry.tsx`、`frontend/components/merchant/merchant-console.tsx`、`frontend/components/intent/intent-detail.tsx`
-- `frontend/components/shared/add-hashkey-network-button.tsx`、`frontend/lib/payfi-api.ts`
+- `frontend/app/payment/result/`、`frontend/lib/payment-result-tx.ts`
+- `frontend/components/payfi-demo.tsx`、`frontend/components/home/role-entry.tsx`、`frontend/components/merchant/merchant-console.tsx`、`frontend/components/merchant/merchant-release-panel.tsx`、`frontend/components/intent/intent-detail.tsx`
+- `frontend/components/shared/add-hashkey-network-button.tsx`、`frontend/components/shared/dual-sign-intent-facts.tsx`、`frontend/components/shared/hashkey-funding-alternative.tsx`
+- `frontend/lib/payfi-api.ts`
+- `src/hashkey/client.ts`、`src/routes/intents.ts`、`src/types.ts`
 - `src/server.ts`、`src/db/pool.ts`
-- `docs/payfidemo_flow_zh.html`、`frontend/.env.example`
+- `scripts/switch-env.sh`、`.env.example`、`.env.hashkey.testnet.example`、`frontend/.env.hashkey.testnet.example`
+- `docs/payfidemo_flow_zh.html`、`docs/CHECKLIST-env-hashkey-local-neon.md`
 
 ## 当日记录（2026-04-11）
 

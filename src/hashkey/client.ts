@@ -86,6 +86,24 @@ export function buildCartContents(intent: {
   };
 }
 
+/**
+ * 支付完成回跳地址：在商户配置的 `redirect_url` 上固定带上 `intentId`，
+ * 落地页据此调用 `POST .../funding/tx`。须为绝对 URL（含协议与 host）。
+ */
+export function appendIntentIdToRedirectUrl(redirectUrl: string, intentId: string): string {
+  const trimmed = redirectUrl.trim();
+  let u: URL;
+  try {
+    u = new URL(trimmed);
+  } catch {
+    throw new Error(
+      `Invalid HashKey redirect_url (must be absolute URL, e.g. https://host/payment/result): ${trimmed}`,
+    );
+  }
+  u.searchParams.set("intentId", intentId);
+  return u.toString();
+}
+
 export async function createReusableOrder(input: {
   intentId: string;
   merchant: string;
@@ -110,18 +128,19 @@ export async function createReusableOrder(input: {
   };
   const redirectFixed = process.env.HASHKEY_REDIRECT_URL?.trim();
   const baseUrlForRedirect = process.env.BASE_URL?.trim() ?? "";
+  let rawRedirect = "";
   if (redirectFixed) {
-    requestBody.redirect_url = redirectFixed;
+    rawRedirect = redirectFixed;
   } else if (baseUrlForRedirect) {
-    // QA may require https; production checkouts often do. Local http still sent so devs see real API errors vs missing field.
     const base = baseUrlForRedirect.replace(/\/$/, "");
-    requestBody.redirect_url = `${base}/payment/result`;
+    rawRedirect = `${base}/payment/result`;
   }
-  if (typeof requestBody.redirect_url !== "string" || !requestBody.redirect_url.trim()) {
+  if (!rawRedirect.trim()) {
     throw new Error(
       "HashKey reusable order needs redirect_url: set HASHKEY_REDIRECT_URL or BASE_URL in .env (see .env.example)",
     );
   }
+  requestBody.redirect_url = appendIntentIdToRedirectUrl(rawRedirect, input.intentId);
   const body = canonicalStringify(requestBody as object);
 
   const headers = buildHmacHeaders({

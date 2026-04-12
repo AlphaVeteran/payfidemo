@@ -105,7 +105,7 @@ npm run db:migrate
 | `MERCHANT_PRIVATE_KEY_PEM` **或** `MERCHANT_PRIVATE_KEY_PATH` | ✅ | 二选一；用于 `merchant_authorization` JWT（EC 私钥）。 |
 | `HASHKEY_JWT_AUD` | 可选 | 默认 `hgatepay`；与 QA 约定一致即可。 |
 | `HASHKEY_MERCHANT_ID` | 可选 | 未设时回退为 `APP_KEY`。 |
-| `HASHKEY_REDIRECT_URL` **或** `BASE_URL` | ✅* | 创建可复用订单时必须能拼出 **`redirect_url`**（`HASHKEY_REDIRECT_URL` 优先）。*本地联调*请改为 **`http://127.0.0.1:3000/...`** 或 ngrok HTTPS，勿沿用仅指向远端的 URL，否则支付完成回跳不到本机。 |
+| `HASHKEY_REDIRECT_URL` **或** `BASE_URL` | ✅* | 创建可复用订单时必须能拼出 **`redirect_url`**（`HASHKEY_REDIRECT_URL` 优先）；服务端会在该 URL 上追加 **`intentId=<uuid>`**，供前端路由 **`/payment/result`** 调用 `POST .../funding/tx`（若网关回跳再带 `tx_hash` 等）。*本地联调*请改为 **`http://127.0.0.1:3000/...`** 或 ngrok HTTPS，勿沿用仅指向远端的 URL，否则支付完成回跳不到本机。 |
 
 **本地联调时建议核对**：
 
@@ -145,7 +145,7 @@ npm run db:migrate
 | `PAYFIDEMO_DEBUG=true` | 仅本机需要 `POST .../debug/intents/:id/expire` 时。 |
 | `WEBHOOK_TIMEOUT_MS` | 调 webhook 超时；有默认值时可不填。 |
 | `X402_ENABLED` | 与 x402 相关实验；默认 `false` 即可。 |
-| `BASE_URL` | 若不使用 `HASHKEY_REDIRECT_URL`，且需 `redirect_url=${BASE_URL}/payment/result` 时；本地通常优先 `HASHKEY_REDIRECT_URL`。 |
+| `BASE_URL` | 若不使用 `HASHKEY_REDIRECT_URL`，且需 `redirect_url=${BASE_URL}/payment/result?intentId=…` 时；本地通常优先 `HASHKEY_REDIRECT_URL`。 |
 
 ---
 
