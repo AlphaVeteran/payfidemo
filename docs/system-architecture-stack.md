@@ -109,8 +109,14 @@ flowchart TB
 
 ### 2.4 payfi-api.ts（前端 → 后端）
 
-- **作用**：将 `NEXT_PUBLIC_PAYFI_API_URL`（默认 `http://127.0.0.1:8787`）拼成 **`/api/payfi/v1`** 下的 REST 调用（创建 intent、入金确认、释放、退款等）。
+- **作用**：将 `NEXT_PUBLIC_PAYFI_API_URL`（默认 `http://127.0.0.1:8787`）拼成 **`/api/payfi/v1`** 下的 REST 调用（创建 intent、入金确认、释放、退款、**网关对账**等）。
 - **与其它部分**：**Next 与 Express 分属不同进程**（典型：`next dev` 与 `npm run dev` 各占用端口）；持久化与链上副作用发生在 **Express** 内。
+
+### 2.4.1 支付回跳页（`/payment/result`）与托管登记
+
+- **作用**：用户经 **HashKey 收银台**（或其它路径）支付完成后，浏览器回跳到 **`{BASE_URL}/payment/result?intentId=…`**（下单时由后端 **`redirect_url`** 写入，见 `src/hashkey/client.ts` 的 **`appendIntentIdToRedirectUrl`**；若配置 **`HASHKEY_REDIRECT_URL`** 则优先使用该根地址）。
+- **交易哈希**：落地页优先从 **URL query**（`tx_hash`、`transaction_hash` 等，见 `frontend/lib/payment-result-tx.ts`）解析链上哈希并 **`POST .../funding/tx`**；若 query 无哈希，则请求 **`GET .../intents/:id/gateway-reconciliation`**，由服务端调用 HashKey **`GET /merchant/payments`** 解析 **`tx_signature`** 等后再登记。
+- **代码位置**：`frontend/app/payment/result/`、`frontend/lib/payment-result-tx.ts`；对账逻辑与 `src/hashkey/client.ts` 中 **`resolveGatewayTxForReconciliation`** 等一致。
 
 ### 2.5 链上：JSON-RPC 与智能合约
 
@@ -124,8 +130,8 @@ flowchart TB
 
 ### 2.7 HashKey Gateway
 
-- **作用**：后端调用 HashKey **商户下单 API**（如 `HASHKEY_BASE_URL` + reusable order），得到 **`payment_url`**，供用户跳转 **收银台 / 链下支付路径**（与「纯链上入金」可选并存）。
-- **代码线索**：`src/hashkey/client.ts`、`src/routes/intents.ts` 创建 intent 时可选填充 `paymentUrl`。
+- **作用**：后端调用 HashKey **商户下单 API**（如 **`HASHKEY_BASE_URL`** + reusable order），得到 **`payment_url`**，供用户跳转 **收银台**（与钱包 **`approve` + `createAndDeposit`** 的「纯链上入金」可选并存）。下单请求携带 **`redirect_url`**（由 **`BASE_URL`** 拼 **`/payment/result`**，或 **`HASHKEY_REDIRECT_URL`** 覆盖），并带上 **`intentId`** 供回跳页与 **`/gateway-reconciliation`** 关联同一笔意向。
+- **代码线索**：`src/hashkey/client.ts`、`src/routes/intents.ts` 创建 intent 时可选填充 `paymentUrl`、`hskCartMandateId` / `hskPaymentReqId`。
 - **与其它部分**：**出站 HTTPS** 至 HashKey；返回的 URL 经 API 给到前端展示或跳转。
 
 ### 2.8 HashKey Webhook（入站）
@@ -156,7 +162,8 @@ flowchart TB
 
 | 起点 | 终点 | 关系说明 |
 |------|------|----------|
-| Next 页面 | Express | HTTP（`payfi-api.ts`），创建/查询 intent、上报入金 tx、释放与退款等。 |
+| Next 页面 | Express | HTTP（`payfi-api.ts`），创建/查询 intent、上报入金 tx、**gateway-reconciliation**、释放与退款等。 |
+| Next **`/payment/result`** | Express | 回跳后登记托管：优先 URL 中的 tx，否则 **`GET .../gateway-reconciliation`** → **`POST .../funding/tx`**。 |
 | Next 页面 | 链 | 经 wagmi/viem，用户签名、发交易、读合约状态。 |
 | Express intents | HashKey Gateway | 出站 API 调用，拿回 `payment_url`。 |
 | HashKey 平台 | Express `/webhooks/hashkey` | 入站回调，验签后更新 intent 并可能驱动链上逻辑。 |
@@ -172,3 +179,5 @@ flowchart TB
 - **API 与请求顺序**：[`api-request-flow.md`](./api-request-flow.md)
 - **Postgres 与迁移**：[`persistence-postgres.md`](./persistence-postgres.md)
 - **托管与结算叙事、SettlementPort 概念**：[`payfi-escrow-architecture.md`](./payfi-escrow-architecture.md)
+- **交互式流程图（中/英）**：[`payfidemo_flow_zh.html`](./payfidemo_flow_zh.html)、[`payfidemo_flow_en.html`](./payfidemo_flow_en.html)
+- **交互式系统分层总览（英）**：[`payfidemo_architecture_overview_en.html`](./payfidemo_architecture_overview_en.html)

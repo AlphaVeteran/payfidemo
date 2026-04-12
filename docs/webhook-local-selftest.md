@@ -4,6 +4,26 @@
 
 ---
 
+## 实现状态与 TODO
+
+**已在仓库落地（可与本文逐步对照运行）**
+
+| 内容 | 位置 |
+|------|------|
+| 真实 HTTP POST、超时、`X-PayFi-*` 头与 HMAC | **`src/services/webhookStub.ts`** |
+| 无链 demo 一键自测（echo + API + curl） | **`scripts/webhook-local-selftest.sh`** |
+| Base Sepolia 链上一键自测 | **`scripts/webhook-base-sepolia-selftest.sh`** |
+| 入金/释放/退款等节点触发投递 | **`src/routes/intents.ts`** 调用 **`dispatchWebhookDemo`** |
+| 链上辅助（`accounts` / `fund`） | **`scripts/local-flow.mjs`** |
+
+**TODO（文档「背景」中已说明当前 demo 未做；属平台/产品后续能力）**
+
+- **失败自动重试**：仍为单次 `fetch`，无队列、无指数退避（见下文「重试」小节）。
+- **平台侧投递落库与幂等表**：无 **`webhook_deliveries`** 持久化与自动重试；商户需自行按 **`X-PayFi-Event-Id`** 做幂等（见下文「幂等落库」）。
+- **专用自测脚本**：本文仅覆盖 **无链 demo** 与 **Base Sepolia**；**HashKey Testnet** 链上入金后的 webhook 验收可复用同一 **`dispatchWebhookDemo`** 逻辑，但未提供独立一键脚本（可按「二、Base Sepolia」改写环境变量与 `fund` 流程自行验证）。
+
+---
+
 ## 共同说明
 
 | 项目 | 说明 |

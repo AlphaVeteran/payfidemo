@@ -32,7 +32,7 @@
 
 - **公链端到端验收（优先级）**：以 **HashKey Testnet（133）** 为主路径，补 **`approve` + `createAndDeposit` → `funding/tx` → `release` → `refund`** 冒烟并沉淀录屏/WORKLOG 记录；**Base Sepolia** 上同名流程为备选（可与既有 Railway 变量对齐时补做）。
 - Railway API（`payfidemo-production`）：**`GET /health`**（**`persistence: postgres`**）、**创建 intent**、**Restart 后同一 `intentId` 仍可 `GET`** 已于 **2026-04-07** 验收记入本 WORKLOG；若线上仍指向 Base Sepolia，**链上 funding** 验收跟随上条「备选」而非主优先级。
-- 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）；**Webhook** 仍待 **投递记录表、自动重试、幂等落库、商户侧投递详情** 等进阶闭环（**2026-04-09** 已落地对外真实 POST、超时与本地/链上自测文档）。
+- 意图与 **settlement outbox** 已支持可选 Postgres 持久化（见 `docs/persistence-postgres.md`）。**Webhook**：**2026-04-09** 已落地对外真实 POST、超时；自测见 **`docs/webhook-local-selftest.md`**（文内 **「实现状态与 TODO」** 与 **`scripts/webhook-local-selftest.sh`**、**`scripts/webhook-base-sepolia-selftest.sh`**）。**仍待** 平台侧 **投递记录表**、**失败自动重试**、**幂等落库** 等进阶能力（商户 ERP 侧验签与幂等约定见 **`docs/webhook-local-selftest.md`**）；**HashKey Testnet** 专用 webhook 一键脚本未提供（可沿用 **`dispatchWebhookDemo`** 与链上流程自行验证）。
 - 完成前端主路径（创建意图、充值提示、双签提交、状态展示、退款操作）并打通演示录屏。
 - 评估并按计划决定是否接入 `x402`（建议先保护 1-2 条只读 API，保留环境开关）。
 
