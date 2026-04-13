@@ -173,6 +173,8 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
   const [releasePrep, setReleasePrep] = useState<StoredReleaseState["releasePrep"]>(null);
   const releaseSubmitInFlightRef = useRef(false);
   const [releaseSubmitCooldown, setReleaseSubmitCooldown] = useState(false);
+  /** 用户已进行签名/提交等操作后，不再展示上一轮「需用户重签」类说明 */
+  const [infoHintDismissed, setInfoHintDismissed] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -195,6 +197,10 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
   useEffect(() => {
     setReleaseSubmitCooldown(false);
   }, [intent?.intentId]);
+
+  useEffect(() => {
+    setInfoHintDismissed(false);
+  }, [intent?.intentId, intent?.releaseNonce, intent?.releaseCount]);
 
   useEffect(() => {
     if (!mounted || !id) {
@@ -295,6 +301,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       return;
     }
     setHint(null);
+    setReleaseSubmitCooldown(false);
     setBusy("sign-merchant");
     try {
       await ensureTargetChain();
@@ -344,6 +351,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
           // ignore
         }
       }
+      setInfoHintDismissed(true);
     } catch (e) {
       setHint(e instanceof Error ? e.message : String(e));
     } finally {
@@ -397,6 +405,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         throw new Error(text.needBothSigs);
       }
       await releaseSubmit(intent.intentId, submitUserSig, submitMerchantSig);
+      setInfoHintDismissed(true);
       setReleaseSubmitCooldown(true);
       window.setTimeout(() => setReleaseSubmitCooldown(false), 4500);
       clearLocal();
@@ -489,7 +498,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
 
       <p className="text-[11px] leading-relaxed text-zinc-500">{text.releaseManualNote}</p>
 
-      {((!displayUserSig && !hint) || hint || releaseSubmitCooldown) && (
+      {((!displayUserSig && !hint && !infoHintDismissed) || hint || releaseSubmitCooldown) && (
         <aside
           className="payfi-card mt-1 space-y-3 border border-amber-500/25 bg-amber-500/5 p-4"
           aria-live="polite"
@@ -497,7 +506,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
           <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-200/80">
             {text.hintCardTitle}
           </h2>
-          {!displayUserSig && !hint && (
+          {!displayUserSig && !hint && !infoHintDismissed && (
             <p className="text-sm leading-relaxed text-amber-100/95">
               {intent.releaseCount > 0 ? text.nextRoundNeedResign : text.needUserSignFirst}
             </p>

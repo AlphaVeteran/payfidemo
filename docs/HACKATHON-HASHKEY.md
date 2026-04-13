@@ -48,6 +48,85 @@ Step 6  退款演示（可选）    POST .../refund
 
 ---
 
+## 合同意向状态（六态）与生命周期
+
+与代码中 `IntentStatus` 对齐的六种业务状态：**待支付**、**已过期**、**托管中**、**部分结算**、**已结算**、**已退款**。
+
+> **备注（已过期）**：**已过期**（`expired`）作为独立业务态的完整落地（如超时自动落库、列表/筛选、与网关失败路径一致对齐等）当前 **待实现**。本节状态图与下表为**目标生命周期**说明，不代表已全部实现。
+
+**在 Cursor 默认 Markdown 预览里，`mermaid` 代码块往往不会渲染成图**（需安装「Markdown Preview Mermaid Support」等扩展）。若要看图：把下面「Mermaid 源码」整段复制到 [mermaid.live](https://mermaid.live) 左侧即可预览或导出 PNG/SVG。
+
+### Mermaid 源码（可复制到 mermaid.live）
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> pending: 创建意向
+  state "待支付" as pending
+  state "已过期" as expired
+  state "托管中" as active
+  state "部分结算" as partial
+  state "已结算" as settled
+  state "已退款" as refunded
+  pending --> active: 入金成功\n链上托管建立
+  pending --> expired: 未在时限内入金\n或网关 payment-failed 等
+  active --> partial: 已放款\n仍有未结清
+  partial --> active: 仍可继续放款\n(实现上可合并为托管中)
+  active --> settled: 最后一期结清
+  partial --> settled: 最后一期结清
+  active --> refunded: 满足退款条件
+  partial --> refunded: 满足退款条件
+  settled --> [*]
+  refunded --> [*]
+  expired --> [*]
+```
+
+### 纯文本示意（任意预览均可显示）
+
+```
+                    ┌─────────────┐
+         创建意向    │   待支付    │
+        ──────────►  │awaiting_*   │
+                    └──────┬──────┘
+           入金成功         │         超时/失败未入金
+              │            │            │
+              ▼            │            ▼
+       ┌─────────────┐     │     ┌─────────────┐
+       │   托管中     │     │     │   已过期     │
+       │   active    │     │     │   expired   │
+       └──────┬──────┘     │     └──────┬──────┘
+              │            │            │
+   分期未结清  │            │            └──► 终态
+              ▼            │
+       ┌─────────────┐     │
+       │  部分结算    │◄────┘
+       │partially_*  │
+       └──────┬──────┘
+              │
+     结清 / 退款
+              ▼
+       ┌──────────┐   ┌──────────┐
+       │ 已结算    │   │ 已退款    │
+       │ settled  │   │ refunded │
+       └────┬─────┘   └────┬─────┘
+            └──────┬───────┘
+                   ▼
+                 终态
+```
+
+### 与 `IntentStatus` 字段对照
+
+| 业务状态 | 典型 `status` 值 |
+|---------|-------------------|
+| 待支付 | `awaiting_funding` |
+| 已过期 | `expired`（**待实现**） |
+| 托管中 | `active` |
+| 部分结算 | `partially_settled` |
+| 已结算 | `settled` |
+| 已退款 | `refunded` |
+
+---
+
 ## 现状 Gap 分析
 
 | 现有（main 分支）                  | 黑客松需要                                      |

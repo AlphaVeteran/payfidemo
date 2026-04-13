@@ -26,7 +26,7 @@ function statusText(status: string, locale: "zh-CN" | "zh-TW" | "en") {
     case "settled":
       return locale === "en" ? "Settled" : locale === "zh-TW" ? "已結算" : "已结算";
     case "refunded":
-      return locale === "en" ? "Refunded" : "已退款";
+      return locale === "en" ? "Refunded" : locale === "zh-TW" ? "已退款" : "已退款";
     default:
       return status;
   }

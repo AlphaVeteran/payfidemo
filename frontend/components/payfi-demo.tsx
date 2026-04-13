@@ -154,7 +154,7 @@ function intentStatusLabel(status: string, loc: "zh-CN" | "zh-TW" | "en") {
     case "settled":
       return loc === "en" ? "Settled" : loc === "zh-TW" ? "已結算" : "已结算";
     case "refunded":
-      return loc === "en" ? "Refunded" : "已退款";
+      return loc === "en" ? "Refunded" : loc === "zh-TW" ? "已退款" : "已退款";
     default:
       return status;
   }
@@ -910,6 +910,7 @@ export default function PayFiDemo() {
 
   const onCreate = async () => {
     setError(null);
+    setRefundResult(null);
     setBusy("create");
     try {
       let body: Record<string, unknown> = { ...defaultCreateBody };
@@ -1086,6 +1087,7 @@ export default function PayFiDemo() {
     }
     setError(null);
     setReleaseHint(null);
+    setReleaseSubmitCooldown(false);
     setBusy("sign-user");
     try {
       await ensureTargetChain();
@@ -1216,6 +1218,21 @@ export default function PayFiDemo() {
   }, [intent]);
 
   const [wizardStep, setWizardStep] = useState(2);
+
+  /** 离开退款步骤后，不再展示上一笔「已退款」等底部操作提示 */
+  useEffect(() => {
+    if (wizardStep !== 5) setRefundResult(null);
+  }, [wizardStep]);
+
+  /** 切换 intentId 时清除上一笔操作的底部提示 */
+  useEffect(() => {
+    setRefundResult(null);
+  }, [intentId]);
+
+  /** 进入「新建意向」步骤时清除 nonce 等链上提示，避免与当前表单无关的提示残留 */
+  useEffect(() => {
+    if (wizardStep === 2) setReleaseHint(null);
+  }, [wizardStep]);
 
   useEffect(() => {
     setWizardStep((s) => (s === 1 ? s : derivedWizardStep));
