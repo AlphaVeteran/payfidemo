@@ -16,7 +16,7 @@ export const payfiHttpBase = (): string => {
     typeof process.env.NEXT_PUBLIC_PAYFI_API_URL === "string" &&
     process.env.NEXT_PUBLIC_PAYFI_API_URL.length > 0
       ? process.env.NEXT_PUBLIC_PAYFI_API_URL.replace(/\/$/, "")
-      : "http://127.0.0.1:8787";
+      : "http://localhost:8787";
   return base;
 };
 
@@ -169,11 +169,24 @@ export async function releasePrepare(
   return data;
 }
 
+/** `POST .../release/submit` 成功体：含链上提交后最新计数，便于前端立即刷新 UI */
+export type ReleaseSubmitResponse = {
+  ok: boolean;
+  intentId?: string;
+  status: string;
+  releaseNonce: number;
+  releaseCount: number;
+  releasedTotal: string;
+  txHash: string;
+  chain?: boolean;
+  demoNote?: string;
+};
+
 export async function releaseSubmit(
   intentId: string,
   userSig: `0x${string}`,
   merchantSig: `0x${string}`,
-): Promise<Record<string, unknown>> {
+): Promise<ReleaseSubmitResponse> {
   const res = await fetch(
     `${apiRoot()}/intents/${encodeURIComponent(intentId)}/release/submit`,
     {
@@ -182,7 +195,7 @@ export async function releaseSubmit(
       body: JSON.stringify({ userSig, merchantSig }),
     },
   );
-  const data = await res.json();
+  const data = (await res.json()) as ReleaseSubmitResponse & { error?: string; detail?: string };
   if (!res.ok) throw new Error(apiFailMessage(data, "release submit failed"));
   return data;
 }

@@ -46,6 +46,21 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-14）
+
+【今日完成】
+- **Base Sepolia 环境切换**：`scripts/switch-env.sh` 增加 `base-sepolia` 模式（模板 `.env.base.sepolia.example`、可选 overlay `.env.base.sepolia.private`）；根 `.env.example` 补充说明；`package.json` 增加 `env:switch:base-sepolia` / `dev:base-sepolia`。
+- **本地前端 ↔ API（Chrome PNA）**：`src/server.ts` 对响应增加 `Access-Control-Allow-Private-Network`，避免 `localhost` 页面请求 `127.0.0.1` API 时 `/health` 与跨域请求被浏览器拦截；`frontend/lib/payfi-api.ts` 默认 API 基址改为 `http://localhost:8787`；新增 **`frontend/.env.base.sepolia.example`** 与根模板字段对齐。
+- **链上分期放款状态一致性**：`POST .../release/submit` 在交易确认成功后改为**确定性递增**本地 `releaseNonce` / `releaseCount` / `releasedTotal`（不再依赖交易后立即 `eth_call`，避免 Alchemy 等 RPC 短暂返回旧快照导致 DB 与链不一致）；成功响应体补充 **`intentId`、`releaseNonce`** 等字段，便于前端即时展示。
+- **`release/prepare` 自愈**：若出现 `partially_settled` 但 `releaseCount=0` 且 `releasedTotal=0` 的脏状态，自动降回 **`active`**。
+- **前端提交流程**：用户工作台与商家侧在「提交分期放款」前调用 `release/prepare` 校验 nonce；提交成功后用户页合并 `ReleaseSubmitResponse` 到当前 `intent`；商家控制台 `reload` 支持 **`releaseSnapshot`** 合并列表行，减少「提交后无更新」观感。
+
+【代码证据】
+- `scripts/switch-env.sh`、`.env.base.sepolia.example`、`.env.example`、`.gitignore`、`package.json`
+- `src/server.ts`、`src/routes/intents.ts`
+- `frontend/.env.base.sepolia.example`、`frontend/.env.example`、`frontend/lib/payfi-api.ts`
+- `frontend/components/payfi-demo.tsx`、`frontend/components/merchant/merchant-console.tsx`、`frontend/components/merchant/merchant-release-panel.tsx`
+
 ## 当日记录（2026-04-13）
 
 【今日完成】

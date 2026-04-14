@@ -19,6 +19,13 @@ import { getSettlementOutbox } from "./settlement/settlementOutbox.js";
 import { getWalletChainId, isChainMode } from "./chain/config.js";
 
 const app = express();
+// Chrome Private Network Access: a tab on `http://localhost:*` fetching `http://127.0.0.1:*`
+// (different origins) requires `Access-Control-Allow-Private-Network` on the preflight/response,
+// or `/health` and API calls fail from the Next.js home page.
+app.use((_req, res, next) => {
+  res.setHeader("Access-Control-Allow-Private-Network", "true");
+  next();
+});
 app.use(cors());
 app.use(
   express.json({

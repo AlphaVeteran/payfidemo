@@ -11,6 +11,7 @@ import {
   releaseSubmit,
   saveReleaseSignature,
   type IntentRecord,
+  type ReleaseSubmitResponse,
 } from "@/lib/payfi-api";
 import { releaseStoreKey, type StoredReleaseState } from "@/lib/release-local-state";
 import { targetChainId } from "@/lib/wagmi-config";
@@ -19,7 +20,8 @@ import DualSignIntentFacts from "@/components/shared/dual-sign-intent-facts";
 
 type Props = {
   intent: IntentRecord | null;
-  onIntentRefresh: () => Promise<void>;
+  /** 可选携带 `releaseSnapshot`，便于商家列表立即显示最新分期进度 */
+  onIntentRefresh: (opts?: { releaseSnapshot?: ReleaseSubmitResponse }) => Promise<void>;
 };
 
 export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props) {
@@ -370,6 +372,17 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     releaseSubmitInFlightRef.current = true;
     setBusy("submit-release");
     try {
+      // Force a fresh chain-backed nonce snapshot before submit.
+      // If nonce has already advanced, require re-sign immediately.
+      const prep = await releasePrepare(intent.intentId);
+      const prepMsg = releaseMessageFromApi(prep.typedData.message as Record<string, unknown>);
+      if (prepMsg.nonce !== BigInt(intent.releaseNonce)) {
+        clearLocal();
+        setHint(text.nonceDesyncHint);
+        await onIntentRefresh();
+        return;
+      }
+
       const fresh = await getIntent(intent.intentId);
       if (
         fresh.releaseNonce !== intent.releaseNonce ||
@@ -404,12 +417,14 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       if (!submitUserSig || !submitMerchantSig) {
         throw new Error(text.needBothSigs);
       }
-      await releaseSubmit(intent.intentId, submitUserSig, submitMerchantSig);
+      const submitRes = await releaseSubmit(intent.intentId, submitUserSig, submitMerchantSig);
       setInfoHintDismissed(true);
       setReleaseSubmitCooldown(true);
       window.setTimeout(() => setReleaseSubmitCooldown(false), 4500);
       clearLocal();
-      await onIntentRefresh();
+      await onIntentRefresh(
+        submitRes.ok ? { releaseSnapshot: submitRes } : undefined,
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/releaseNonce desync|nonce desync/i.test(msg)) {

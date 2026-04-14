@@ -656,6 +656,18 @@ router.post("/:intentId/release/prepare", async (req, res) => {
       await intentStore.saveIntent(row);
     }
   }
+
+  // Heal inconsistent status: partially_settled requires at least one completed release.
+  // If counters are still zero (DB drift / failed path), downgrade to active so UI + submit match reality.
+  if (
+    row.status === "partially_settled" &&
+    row.releaseCount === 0 &&
+    BigInt(row.releasedTotal) === BigInt(0)
+  ) {
+    row.status = "active";
+    await intentStore.saveIntent(row);
+  }
+
   const chainId = parseChainIdFromEnv();
   const verifying = process.env.ESCROW_ADDRESS?.trim()
     ? getAddress(process.env.ESCROW_ADDRESS.trim())
@@ -852,17 +864,12 @@ router.post("/:intentId/release/submit", async (req, res) => {
         return;
       }
 
-      const after = await publicClient.readContract({
-        address: escrowAddr,
-        abi: payFiEscrowAbi,
-        functionName: "escrows",
-        args: [eid],
-        ...(receipt.blockNumber != null ? { blockNumber: receipt.blockNumber } : {}),
-      });
-      const snap = escrowSnapshotFromEscrowsRead(after);
-      row.releaseCount = snap.releaseCount;
-      row.releasedTotal = snap.releasedTotal;
-      row.releaseNonce = snap.releaseNonce;
+      // Deterministic local advance after a mined success tx.
+      // We already pre-checked on-chain nonce == local nonce before submit,
+      // so this transition is authoritative and avoids flaky immediate RPC reads.
+      row.releaseNonce += 1;
+      row.releaseCount += 1;
+      row.releasedTotal = (released + per).toString();
       row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
       clearReleaseSignatures(row);
       await intentStore.saveIntent(row);
@@ -891,7 +898,9 @@ router.post("/:intentId/release/submit", async (req, res) => {
       });
       res.json({
         ok: true,
+        intentId: row.intentId,
         status: row.status,
+        releaseNonce: row.releaseNonce,
         releaseCount: row.releaseCount,
         releasedTotal: row.releasedTotal,
         txHash: hash,
@@ -940,7 +949,9 @@ router.post("/:intentId/release/submit", async (req, res) => {
     });
     res.json({
       ok: true,
+      intentId: row.intentId,
       status: row.status,
+      releaseNonce: row.releaseNonce,
       releaseCount: row.releaseCount,
       releasedTotal: row.releasedTotal,
       txHash: txHashDemo,

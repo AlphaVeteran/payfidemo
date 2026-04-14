@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .env.base.sepolia
+.env.base.sepolia.private
 .env.hashkey.testnet
 .env.hashkey.private
 .env.local.anvil
