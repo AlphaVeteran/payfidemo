@@ -24,7 +24,15 @@ import {
   isChainMode,
   parseChainIdFromEnv,
 } from "../chain/config.js";
+import { registerEscrowOnChain } from "../chain/escrow.js";
 import { parseEscrowCreatedFromReceipt } from "../chain/funding.js";
+import {
+  collectFlowIdsFromPaymentPayload,
+  createReusableOrder,
+  normalizeMaybeTxHash,
+  queryMerchantPayments,
+  resolveGatewayTxForReconciliation,
+} from "../hashkey/client.js";
 
 const router = Router();
 
@@ -56,6 +64,13 @@ function anchorFromBody(b: CreateIntentBody) {
     jurisdiction: b.jurisdiction,
     disputeResolver: b.disputeResolver,
   };
+}
+
+function clearReleaseSignatures(row: IntentRecord) {
+  row.userSig = undefined;
+  row.merchantSig = undefined;
+  row.userSigAt = undefined;
+  row.merchantSigAt = undefined;
 }
 
 router.post("/", async (req, res) => {
@@ -95,6 +110,10 @@ router.post("/", async (req, res) => {
     expiresAt: null,
     releaseNonce: 0,
     createdAt: new Date().toISOString(),
+    paymentUrl: undefined,
+    hskPaymentReqId: undefined,
+    userSig: undefined,
+    merchantSig: undefined,
   };
   const createdEmitPayload = { intentId, escrowId: null, ...record.anchor };
   if (isPersistenceEnabled() && getPgPool()) {
@@ -107,7 +126,49 @@ router.post("/", async (req, res) => {
     await intentStore.saveIntent(record);
     await settlementAdapter.emit("INTENT_CREATED", createdEmitPayload);
   }
-  res.status(201).json({ intentId, status: record.status });
+  let hashkey: { ok: boolean; reason?: string; raw?: unknown } = { ok: false };
+  try {
+    const hsk = await createReusableOrder({
+      intentId: record.intentId,
+      merchant: record.merchant,
+      amountTotal: record.amountTotal,
+    });
+    if (hsk.paymentUrl) {
+      record.paymentUrl = hsk.paymentUrl;
+    }
+    if (hsk.paymentRequestId) {
+      record.hskPaymentReqId = hsk.paymentRequestId;
+    }
+    if (hsk.cartMandateId) {
+      record.hskCartMandateId = hsk.cartMandateId;
+    }
+    if (record.paymentUrl) {
+      hashkey = { ok: true };
+    } else {
+      hashkey = {
+        ok: false,
+        reason: "HashKey returned no payment_url",
+        raw: hsk.raw,
+      };
+      console.warn("[HashKey] reusable order ok but missing payment_url", hsk.raw);
+    }
+    await intentStore.saveIntent(record);
+  } catch (e) {
+    console.error("[HashKey] createReusableOrder failed:", e);
+    hashkey = {
+      ok: false,
+      reason: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  res.status(201).json({
+    intentId,
+    status: record.status,
+    paymentUrl: record.paymentUrl ?? null,
+    hskPaymentReqId: record.hskPaymentReqId ?? null,
+    hskCartMandateId: record.hskCartMandateId ?? null,
+    hashkey,
+  });
 });
 
 router.get("/", async (_req, res) => {
@@ -165,6 +226,200 @@ router.get("/:intentId/funding/hint", async (req, res) => {
   }
 });
 
+/** HashKey Merchant GET /payments — dual-source reconciliation (HSP / gateway vs local intent + chain). */
+router.get("/:intentId/gateway-reconciliation", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  if (!row.hskCartMandateId?.trim() && !row.hskPaymentReqId?.trim()) {
+    res.status(400).json({
+      error: "no HashKey gateway ids on intent",
+      detail: "Create intent with HashKey reusable order enabled so hskCartMandateId / hskPaymentReqId are set.",
+    });
+    return;
+  }
+  try {
+    /** PAY-REQ-* often returns a stub (`payment-required`); cart_mandate_id may too. Real tx is often on GET /payments?flow_id= from stub `flow_id`. */
+    type PayFilter =
+      | { cartMandateId: string }
+      | { paymentRequestId: string }
+      | { flowId: string };
+    type PaymentPack = {
+      envelope: Awaited<ReturnType<typeof queryMerchantPayments>>["envelope"];
+      items: Awaited<ReturnType<typeof queryMerchantPayments>>["items"];
+      resolved: ReturnType<typeof resolveGatewayTxForReconciliation>;
+      params: PayFilter;
+    };
+
+    const plans: PayFilter[] = [];
+    if (row.hskCartMandateId?.trim()) plans.push({ cartMandateId: row.hskCartMandateId.trim() });
+    if (row.hskPaymentReqId?.trim()) plans.push({ paymentRequestId: row.hskPaymentReqId.trim() });
+
+    const rawLocalFunding = row.fundingTxHash?.trim() ?? "";
+    const ids = {
+      cartMandateId: row.hskCartMandateId,
+      paymentRequestId: row.hskPaymentReqId,
+    };
+
+    const lookupTried: ("cart_mandate_id" | "payment_request_id" | "flow_id")[] = [];
+    let chosen: PaymentPack | undefined;
+    let fallback: PaymentPack | undefined;
+    let lastCodeError: { code?: number; msg?: string } | null = null;
+    let lastFetchError: Error | null = null;
+
+    const hasResolvedTx = (p: PaymentPack) =>
+      Boolean(p.resolved.gatewayTx && normalizeMaybeTxHash(p.resolved.gatewayTx));
+
+    for (const params of plans) {
+      lookupTried.push("cartMandateId" in params ? "cart_mandate_id" : "payment_request_id");
+      try {
+        const { envelope, items } = await queryMerchantPayments(params);
+        if (envelope.code !== undefined && envelope.code !== 0) {
+          lastCodeError = { code: envelope.code, msg: envelope.msg };
+          continue;
+        }
+        const resolved = resolveGatewayTxForReconciliation(items, ids, envelope.data, rawLocalFunding || null);
+        const pack: PaymentPack = { envelope, items, resolved, params };
+        if (hasResolvedTx(pack)) {
+          chosen = pack;
+          break;
+        }
+        if (!fallback) fallback = pack;
+      } catch (e) {
+        lastFetchError = e instanceof Error ? e : new Error(String(e));
+      }
+    }
+
+    let final: PaymentPack | undefined = chosen ?? fallback;
+    if (!final) {
+      if (lastCodeError) {
+        res.status(502).json({
+          error: "HashKey gateway returned error code",
+          code: lastCodeError.code,
+          msg: lastCodeError.msg,
+          intentId: row.intentId,
+        });
+        return;
+      }
+      res.status(502).json({
+        error: "gateway reconciliation failed",
+        detail: lastFetchError?.message ?? "no usable HashKey payment response",
+      });
+      return;
+    }
+
+    if (!hasResolvedTx(final)) {
+      const flowIds = [
+        ...new Set([
+          ...collectFlowIdsFromPaymentPayload(final.envelope.data),
+          ...collectFlowIdsFromPaymentPayload(final.items),
+        ]),
+      ];
+      for (const fid of flowIds) {
+        lookupTried.push("flow_id");
+        try {
+          const { envelope, items } = await queryMerchantPayments({ flowId: fid });
+          if (envelope.code !== undefined && envelope.code !== 0) {
+            lastCodeError = { code: envelope.code, msg: envelope.msg };
+            continue;
+          }
+          const resolved = resolveGatewayTxForReconciliation(
+            items,
+            ids,
+            envelope.data,
+            rawLocalFunding || null,
+          );
+          const pack: PaymentPack = { envelope, items, resolved, params: { flowId: fid } };
+          if (hasResolvedTx(pack)) {
+            final = pack;
+            break;
+          }
+        } catch (e) {
+          lastFetchError = e instanceof Error ? e : new Error(String(e));
+        }
+      }
+    }
+
+    const { items, resolved, params } = final;
+    const { primary, gatewayTx: gatewayTxRaw } = resolved;
+    const gatewayNorm = gatewayTxRaw ? normalizeMaybeTxHash(gatewayTxRaw) : null;
+    const localNorm = rawLocalFunding ? normalizeMaybeTxHash(rawLocalFunding) : null;
+    const explorerBase =
+      process.env.BLOCKSCOUT_URL?.trim().replace(/\/$/, "") || "https://testnet-explorer.hsk.xyz";
+    const gatewayTxUrl = gatewayNorm ? `${explorerBase}/tx/${gatewayNorm}` : null;
+    const localTxUrl = localNorm ? `${explorerBase}/tx/${localNorm}` : null;
+    const match =
+      gatewayNorm && localNorm ? gatewayNorm === localNorm : null;
+
+    const gatewayPaymentStatus =
+      primary && typeof primary === "object" && "status" in primary
+        ? String((primary as { status?: unknown }).status ?? "").trim()
+        : "";
+    const gst = gatewayPaymentStatus.toLowerCase();
+
+    type ComparisonHintCode =
+      | "gateway_payment_required_local_funded"
+      | "gateway_no_tx_local_funded"
+      | "local_funding_tx_missing"
+      | "no_hashes_to_compare";
+
+    let comparisonHintCode: ComparisonHintCode | null = null;
+    if (!gatewayNorm && !localNorm) {
+      comparisonHintCode = "no_hashes_to_compare";
+    } else if (!gatewayNorm && localNorm) {
+      if (gst === "payment-required" || gst === "pending" || gst === "awaiting_payment") {
+        comparisonHintCode = "gateway_payment_required_local_funded";
+      } else {
+        comparisonHintCode = "gateway_no_tx_local_funded";
+      }
+    } else if (gatewayNorm && !localNorm) {
+      comparisonHintCode = "local_funding_tx_missing";
+    }
+
+    const lookupSelected: "cart_mandate_id" | "payment_request_id" | "flow_id" = "flowId" in params
+      ? "flow_id"
+      : "cartMandateId" in params
+        ? "cart_mandate_id"
+        : "payment_request_id";
+    const selectedFlowId = "flowId" in params ? params.flowId : null;
+
+    res.json({
+      intentId: row.intentId,
+      query: {
+        cartMandateId: row.hskCartMandateId ?? null,
+        paymentRequestId: row.hskPaymentReqId ?? null,
+        lookupTried,
+        lookupSelected,
+        selectedFlowId,
+      },
+      local: {
+        status: row.status,
+        fundingTxHash: row.fundingTxHash,
+        escrowId: row.escrowId,
+      },
+      gateway: {
+        items,
+        primary: primary ?? null,
+      },
+      reconciliation: {
+        gatewayTxSignature: gatewayNorm ?? (gatewayTxRaw || null),
+        localFundingTxHash: localNorm ?? (rawLocalFunding || null),
+        txMatch: match,
+        explorerGatewayTxUrl: gatewayTxUrl,
+        explorerLocalTxUrl: localTxUrl,
+        comparisonHintCode,
+      },
+    });
+  } catch (e) {
+    res.status(502).json({
+      error: "gateway reconciliation failed",
+      detail: e instanceof Error ? e.message : String(e),
+    });
+  }
+});
+
 router.get("/:intentId", async (req, res) => {
   const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
@@ -199,67 +454,119 @@ router.post("/:intentId/funding/tx", async (req, res) => {
     if (isChainMode()) {
       const escrowAddr = getAddress(process.env.ESCROW_ADDRESS!.trim());
       const parsed = await parseEscrowCreatedFromReceipt(escrowAddr, txHash);
-      if (!parsed) {
-        res.status(400).json({ error: "no EscrowCreated in receipt for ESCROW_ADDRESS" });
-        return;
-      }
-      if (parsed.user !== row.user) {
-        res.status(400).json({ error: "user mismatch", onChain: parsed.user, intent: row.user });
-        return;
-      }
-      if (parsed.merchant !== row.merchant) {
-        res
-          .status(400)
-          .json({ error: "merchant mismatch", onChain: parsed.merchant, intent: row.merchant });
-        return;
-      }
-      if (parsed.asset !== row.asset) {
-        res.status(400).json({ error: "asset mismatch", onChain: parsed.asset, intent: row.asset });
-        return;
-      }
-      if (parsed.amountTotal !== BigInt(row.amountTotal)) {
-        res.status(400).json({
-          error: "amountTotal mismatch",
-          onChain: parsed.amountTotal.toString(),
-          intent: row.amountTotal,
-        });
-        return;
-      }
-      if (parsed.agreementHash.toLowerCase() !== row.anchor.agreementHash.toLowerCase()) {
-        res.status(400).json({ error: "agreementHash mismatch" });
-        return;
-      }
+      if (parsed) {
+        if (parsed.user !== row.user) {
+          res.status(400).json({ error: "user mismatch", onChain: parsed.user, intent: row.user });
+          return;
+        }
+        if (parsed.merchant !== row.merchant) {
+          res
+            .status(400)
+            .json({ error: "merchant mismatch", onChain: parsed.merchant, intent: row.merchant });
+          return;
+        }
+        if (parsed.asset !== row.asset) {
+          res.status(400).json({ error: "asset mismatch", onChain: parsed.asset, intent: row.asset });
+          return;
+        }
+        if (parsed.amountTotal !== BigInt(row.amountTotal)) {
+          res.status(400).json({
+            error: "amountTotal mismatch",
+            onChain: parsed.amountTotal.toString(),
+            intent: row.amountTotal,
+          });
+          return;
+        }
+        if (parsed.agreementHash.toLowerCase() !== row.anchor.agreementHash.toLowerCase()) {
+          res.status(400).json({ error: "agreementHash mismatch" });
+          return;
+        }
 
-      row.fundingTxHash = txHash;
-      row.escrowId = parsed.escrowId;
-      row.status = "active";
-      row.expiresAt = parsed.expiresAt;
-      await intentStore.saveIntent(row);
+        row.fundingTxHash = txHash;
+        row.escrowId = parsed.escrowId;
+        row.status = "active";
+        row.expiresAt = parsed.expiresAt;
+        await intentStore.saveIntent(row);
 
-      try {
-        await settlementAdapter.emit("INTENT_FUNDED", {
-          intentId: row.intentId,
-          escrowId: parsed.escrowId,
-          txHash,
-          ...row.anchor,
-        });
-        await dispatchWebhookDemo({
-          webhookUrl: row.webhookUrl,
-          webhookSecret: row.webhookSecret,
-          type: "INTENT_FUNDED",
-          body: {
+        try {
+          await settlementAdapter.emit("INTENT_FUNDED", {
             intentId: row.intentId,
             escrowId: parsed.escrowId,
             txHash,
-            agreementHash: row.anchor.agreementHash,
-            termsVersion: row.anchor.termsVersion,
-          },
+            ...row.anchor,
+          });
+          await dispatchWebhookDemo({
+            webhookUrl: row.webhookUrl,
+            webhookSecret: row.webhookSecret,
+            type: "INTENT_FUNDED",
+            body: {
+              intentId: row.intentId,
+              escrowId: parsed.escrowId,
+              txHash,
+              agreementHash: row.anchor.agreementHash,
+              termsVersion: row.anchor.termsVersion,
+            },
+          });
+        } catch (sideErr) {
+          console.error("[funding/tx] settlement outbox / webhook log failed:", sideErr);
+        }
+        res.json({
+          ok: true,
+          status: row.status,
+          escrowId: parsed.escrowId,
+          chain: true,
+          fundingPath: "createAndDeposit",
         });
-      } catch (sideErr) {
-        console.error("[funding/tx] settlement outbox / webhook log failed:", sideErr);
+        return;
       }
-      res.json({ ok: true, status: row.status, escrowId: parsed.escrowId, chain: true });
-      return;
+
+      /** HashKey HSP (EIP-3009 / USDC) checkout tx has no EscrowCreated — same path as POST /webhooks/hashkey */
+      try {
+        const escrowId = await registerEscrowOnChain(row, txHash);
+        row.fundingTxHash = txHash;
+        row.escrowId = escrowId;
+        row.expiresAt = Math.floor(Date.now() / 1000) + row.durationSeconds;
+        row.status = "active";
+        await intentStore.saveIntent(row);
+        try {
+          await settlementAdapter.emit("INTENT_FUNDED", {
+            intentId: row.intentId,
+            escrowId,
+            txHash,
+            ...row.anchor,
+          });
+          await dispatchWebhookDemo({
+            webhookUrl: row.webhookUrl,
+            webhookSecret: row.webhookSecret,
+            type: "INTENT_FUNDED",
+            body: {
+              intentId: row.intentId,
+              escrowId,
+              txHash,
+              agreementHash: row.anchor.agreementHash,
+              termsVersion: row.anchor.termsVersion,
+            },
+          });
+        } catch (sideErr) {
+          console.error("[funding/tx] settlement outbox / webhook log failed:", sideErr);
+        }
+        res.json({
+          ok: true,
+          status: row.status,
+          escrowId,
+          chain: true,
+          fundingPath: "registerDeposit",
+        });
+        return;
+      } catch (regErr) {
+        res.status(400).json({
+          error: "funding tx not recognized for chain mode",
+          detail:
+            "Expected a receipt with EscrowCreated (createAndDeposit), or a HashKey checkout tx that registerDeposit accepts. " +
+            (regErr instanceof Error ? regErr.message : String(regErr)),
+        });
+        return;
+      }
     }
 
     const escrowId = String(demoEscrowCounter++);
@@ -338,6 +645,7 @@ router.post("/:intentId/release/prepare", async (req, res) => {
       row.releaseNonce = snap.releaseNonce;
       row.releaseCount = snap.releaseCount;
       row.releasedTotal = snap.releasedTotal;
+      clearReleaseSignatures(row);
       if (row.releasedTotal === row.amountTotal) {
         row.status = "settled";
       } else if (row.releaseCount > 0) {
@@ -386,6 +694,58 @@ router.post("/:intentId/release/prepare", async (req, res) => {
   });
 });
 
+router.get("/:intentId/release/signatures", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({
+    intentId: row.intentId,
+    userSig: row.userSig ?? null,
+    merchantSig: row.merchantSig ?? null,
+    userSigAt: row.userSigAt ?? null,
+    merchantSigAt: row.merchantSigAt ?? null,
+  });
+});
+
+router.post("/:intentId/release/signatures", async (req, res) => {
+  const row = await intentStore.getIntent(req.params.intentId);
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  const { role, signature } = req.body as { role?: "user" | "merchant"; signature?: string };
+  if ((role !== "user" && role !== "merchant") || !signature) {
+    res.status(400).json({ error: "role(user|merchant) and signature required" });
+    return;
+  }
+  const sig = signature.trim();
+  if (!/^0x[0-9a-fA-F]{130}$/i.test(sig)) {
+    res.status(400).json({ error: "invalid signature format" });
+    return;
+  }
+  // 只更新对应角色；勿在保存用户签时清空商家签（否则「商家先签 → 用户后签」会丢失商家签）。
+  // 链上 nonce 变化时由 prepare 读链或 release/submit 成功路径上的 clearReleaseSignatures 统一清空。
+  const savedAt = new Date().toISOString();
+  if (role === "user") {
+    row.userSig = sig;
+    row.userSigAt = savedAt;
+  } else {
+    row.merchantSig = sig;
+    row.merchantSigAt = savedAt;
+  }
+  await intentStore.saveIntent(row);
+  res.json({
+    ok: true,
+    intentId: row.intentId,
+    userSig: row.userSig ?? null,
+    merchantSig: row.merchantSig ?? null,
+    userSigAt: row.userSigAt ?? null,
+    merchantSigAt: row.merchantSigAt ?? null,
+  });
+});
+
 router.post("/:intentId/release/submit", async (req, res) => {
   const row = await intentStore.getIntent(req.params.intentId);
   if (!row) {
@@ -396,7 +756,9 @@ router.post("/:intentId/release/submit", async (req, res) => {
     userSig?: string;
     merchantSig?: string;
   };
-  if (!userSig || !merchantSig) {
+  const finalUserSig = userSig ?? row.userSig;
+  const finalMerchantSig = merchantSig ?? row.merchantSig;
+  if (!finalUserSig || !finalMerchantSig) {
     res.status(400).json({ error: "userSig and merchantSig required" });
     return;
   }
@@ -435,6 +797,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
         row.releaseCount = snap0.releaseCount;
         row.releasedTotal = snap0.releasedTotal;
         row.releaseNonce = snap0.releaseNonce;
+        clearReleaseSignatures(row);
         if (row.releasedTotal === row.amountTotal) {
           row.status = "settled";
         } else if (row.releaseCount > 0) {
@@ -457,15 +820,35 @@ router.post("/:intentId/release/submit", async (req, res) => {
       }
 
       const walletClient = getSubmitterWallet();
+      try {
+        await publicClient.simulateContract({
+          address: escrowAddr,
+          abi: payFiEscrowAbi,
+          functionName: "releaseBySignatures",
+          args: [eid, per, finalUserSig as Hex, finalMerchantSig as Hex],
+          account: walletClient.account,
+        });
+      } catch (simErr) {
+        res.status(502).json({
+          error: "release submit failed",
+          detail: simErr instanceof Error ? simErr.message : String(simErr),
+        });
+        return;
+      }
+
       const hash = await walletClient.writeContract({
         address: escrowAddr,
         abi: payFiEscrowAbi,
         functionName: "releaseBySignatures",
-        args: [eid, per, userSig as Hex, merchantSig as Hex],
+        args: [eid, per, finalUserSig as Hex, finalMerchantSig as Hex],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") {
-        res.status(502).json({ error: "tx reverted", txHash: hash });
+        res.status(502).json({
+          error: "release submit failed",
+          detail: `transaction mined with failed status: ${hash}`,
+          txHash: hash,
+        });
         return;
       }
 
@@ -481,6 +864,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
       row.releasedTotal = snap.releasedTotal;
       row.releaseNonce = snap.releaseNonce;
       row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
+      clearReleaseSignatures(row);
       await intentStore.saveIntent(row);
 
       await settlementAdapter.emit("SETTLEMENT_RELEASED", {
@@ -520,6 +904,7 @@ router.post("/:intentId/release/submit", async (req, res) => {
     row.releaseCount += 1;
     row.releasedTotal = (released + per).toString();
     row.status = row.releasedTotal === row.amountTotal ? "settled" : "partially_settled";
+    clearReleaseSignatures(row);
     const txHashDemo = `0x${"ab".repeat(32)}`;
     const releasedPayload = {
       intentId: row.intentId,

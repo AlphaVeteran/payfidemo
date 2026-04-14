@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "env:switch:local": "bash scripts/switch-env.sh local",
+    "env:switch:hashkey": "bash scripts/switch-env.sh hashkey",
+    "dev:local": "npm run env:switch:local && npm run dev",
+    "dev:hashkey": "npm run env:switch:hashkey && npm run dev",
     "dev:frontend": "npm run dev --prefix frontend",
     "start": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
@@ -26,8 +30,10 @@
     "node": ">=20"
   },
   "dependencies": {
+    "canonicalize": "^2.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "ecdsa-sig-formatter": "^1.0.11",
     "express": "^4.21.0",
     "pg": "^8.20.0",
     "uuid": "^10.0.0",

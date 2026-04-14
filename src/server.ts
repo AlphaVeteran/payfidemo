@@ -11,21 +11,29 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runMigrations } from "./db/migrate.js";
-import { closePgPool, getPgPool, isPersistenceEnabled } from "./db/pool.js";
+import { closePgPool, getDatabaseProductLabel, getPgPool, isPersistenceEnabled } from "./db/pool.js";
 import intentsRouter from "./routes/intents.js";
+import hashkeyWebhookRouter from "./routes/webhook.js";
 import { intentStore } from "./store/intentStore.js";
 import { getSettlementOutbox } from "./settlement/settlementOutbox.js";
 import { getWalletChainId, isChainMode } from "./chain/config.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as { rawBody?: string }).rawBody = buf.toString("utf8");
+    },
+  }),
+);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(__dirname, "../web");
 
 const API = "/api/payfi/v1";
 
 app.get("/health", (_req, res) => {
+  const pgOn = isPersistenceEnabled();
   res.json({
     ok: true,
     service: "payfidemo",
@@ -35,11 +43,14 @@ app.get("/health", (_req, res) => {
     chainMode: isChainMode(),
     chainRpc: process.env.CHAIN_RPC_URL || null,
     escrowConfigured: Boolean(process.env.ESCROW_ADDRESS?.trim()),
-    persistence: isPersistenceEnabled() ? "postgres" : "memory",
+    persistence: pgOn ? "postgres" : "memory",
+    /** 与 `DATABASE_URL` 协议对应之产品名，仅供展示 */
+    databaseProduct: pgOn ? getDatabaseProductLabel() : null,
   });
 });
 
 app.use(`${API}/intents`, intentsRouter);
+app.use("/webhooks", hashkeyWebhookRouter);
 app.use(express.static(webDir));
 
 app.get("/", (_req, res) => {

@@ -86,7 +86,7 @@
 <body>
 
 <h1>PayFi Demo Settlement Flow</h1>
-<p class="subtitle">Intent API + Escrow Contract + Dual EIP-712 Signatures + Settlement outbox / Webhook</p>
+<p class="subtitle">Intent API + Escrow (HashKey Testnet primary; Base Sepolia / Anvil optional) + dual EIP-712 release signatures + optional HashKey checkout → <code style="color:#64748b">/payment/result</code> + <code style="color:#64748b">gateway-reconciliation</code> + settlement outbox / merchant webhook</p>
 
 <div class="btn-row">
   <button id="btn-all" onclick="setMode('all')" class="active">Full Flow</button>
@@ -126,11 +126,12 @@
   <text x="557" y="103" text-anchor="middle" font-size="13" font-weight="500" fill="#fcd34d">PayFiEscrow Contract</text>
   <text x="557" y="120" text-anchor="middle" font-size="11" fill="#f59e0b">createAndDeposit</text>
   <text x="557" y="136" text-anchor="middle" font-size="11" fill="#f59e0b">releaseBySignatures / refund</text>
-  <text x="557" y="151" text-anchor="middle" font-size="10" fill="#fde68a">Base Sepolia / Anvil</text>
+  <text x="557" y="151" text-anchor="middle" font-size="10" fill="#fde68a">HashKey 133 / Base Sepolia / Anvil</text>
 
   <rect x="30" y="232" width="182" height="56" rx="8" fill="#0f2744" stroke="#1d4ed8" stroke-width="0.5"/>
-  <text x="121" y="255" text-anchor="middle" font-size="12" font-weight="500" fill="#93c5fd">Funding Transaction</text>
-  <text x="121" y="273" text-anchor="middle" font-size="10" fill="#3b82f6">approve + deposit txHash</text>
+  <text x="121" y="251" text-anchor="middle" font-size="12" font-weight="500" fill="#93c5fd">Funding Transaction</text>
+  <text x="121" y="269" text-anchor="middle" font-size="9" fill="#3b82f6">Wallet: approve + createAndDeposit</text>
+  <text x="121" y="283" text-anchor="middle" font-size="9" fill="#60a5fa">Or HashKey checkout → /payment/result</text>
 
   <rect x="248" y="232" width="182" height="56" rx="8" fill="#0a2116" stroke="#15803d" stroke-width="0.5"/>
   <text x="339" y="255" text-anchor="middle" font-size="12" font-weight="500" fill="#86efac">State Machine</text>
@@ -168,7 +169,7 @@
   <text x="448" y="114" text-anchor="middle" font-size="10" fill="#4ade80">calldata + tx</text>
 
   <path d="M121 288 C 121 320, 290 320, 339 288" fill="none" stroke="#64748b" stroke-width="1" stroke-dasharray="4 4" class="flow-line flow-line-3" marker-end="url(#arr)"/>
-  <text x="214" y="323" text-anchor="middle" font-size="10" fill="#64748b">funding/tx report</text>
+  <text x="214" y="323" text-anchor="middle" font-size="9" fill="#64748b">POST funding/tx (or reconcile tx)</text>
 
   <path d="M430 260 C 442 260, 454 260, 466 260" fill="none" stroke="#22c55e" stroke-width="1" stroke-dasharray="4 4" class="flow-line flow-line-2" marker-end="url(#arr)"/>
   <path d="M339 168 C 339 196, 339 206, 339 232" fill="none" stroke="#15803d" stroke-width="1" stroke-dasharray="3 3" marker-end="url(#arr)" opacity="0.65"/>
@@ -225,8 +226,9 @@
     <text x="495" y="173" text-anchor="middle" font-size="10" fill="#fde68a">funds locked</text>
     <path d="M275 148 L 405 148" fill="none" stroke="#22c55e" stroke-width="1.5" marker-end="url(#arr2)"/>
     <rect x="145" y="235" width="390" height="56" rx="6" fill="#0f172a" stroke="#334155" stroke-width="0.5"/>
-    <text x="340" y="258" text-anchor="middle" font-size="12" font-weight="500" fill="#cbd5e1">API verifies receipt fields and moves status to active</text>
-    <text x="340" y="276" text-anchor="middle" font-size="11" fill="#64748b">user / merchant / asset / amount / agreementHash</text>
+    <text x="340" y="252" text-anchor="middle" font-size="11" font-weight="500" fill="#cbd5e1">API verifies receipt (or gateway tx) → active</text>
+    <text x="340" y="270" text-anchor="middle" font-size="10" fill="#64748b">EscrowCreated / registerDeposit · optional GET gateway-reconciliation</text>
+    <text x="340" y="286" text-anchor="middle" font-size="10" fill="#64748b">user / merchant / asset / amount / agreementHash</text>
   </g>
 
   <g id="s3" style="display:none">

@@ -19,7 +19,7 @@ contract PayFiEscrowTest is Test {
     bytes32 internal constant AGREEMENT = bytes32(uint256(0xabc));
 
     function setUp() public {
-        escrow = new PayFiEscrow();
+        escrow = new PayFiEscrow(address(this));
         token = new MockERC20("Mock USDC", "mUSDC");
 
         (user, userPk) = makeAddrAndKey("user");

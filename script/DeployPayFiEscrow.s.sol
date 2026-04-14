@@ -5,6 +5,7 @@ import {Script, console2} from "forge-std/Script.sol";
 import {PayFiEscrow} from "../contracts/PayFiEscrow.sol";
 
 /// @notice forge script script/DeployPayFiEscrow.s.sol:DeployPayFiEscrow --rpc-url $RPC_URL --broadcast
+/// @dev 优先读 `SUBMITTER_PRIVATE_KEY`（与 HashKey 文档一致），否则 `PRIVATE_KEY`（README 本地流程）
 contract DeployPayFiEscrow is Script {
     /// @dev Accepts `0x` + 64 hex (typical) or 64 hex only, matching `.env` styles for other keys.
     function privateKeyFromEnv(string memory name) internal view returns (uint256) {
@@ -17,10 +18,15 @@ contract DeployPayFiEscrow is Script {
     }
 
     function run() external {
-        uint256 pk = privateKeyFromEnv("PRIVATE_KEY");
+        string memory subRaw = vm.envOr("SUBMITTER_PRIVATE_KEY", string(""));
+        uint256 pk = bytes(subRaw).length > 0
+            ? privateKeyFromEnv("SUBMITTER_PRIVATE_KEY")
+            : privateKeyFromEnv("PRIVATE_KEY");
+        address submitter = vm.addr(pk);
         vm.startBroadcast(pk);
-        PayFiEscrow e = new PayFiEscrow();
+        PayFiEscrow e = new PayFiEscrow(submitter);
         vm.stopBroadcast();
         console2.log("PayFiEscrow:", address(e));
+        console2.log("submitter:", submitter);
     }
 }

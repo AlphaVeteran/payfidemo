@@ -3,7 +3,9 @@ dist/
 .env
 .env.base.sepolia
 .env.hashkey.testnet
+.env.hashkey.private
 .env.local.anvil
+.env.*.bak
 keys/
 *.log
 .DS_Store

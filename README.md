@@ -1,5 +1,7 @@
 # PayFi Demo
 
+English | [中文](README.zh.md)
+
 End-to-end PayFi demo for escrow-based payments and milestone disbursement.
 
 ## Project Introduction
@@ -35,6 +37,11 @@ PayFi Demo demonstrates a full payment-finance flow:
 - HashKey Gateway checkout capability may be blocked by Cloudflare/Bot protection in public Railway (`payment_url` may be empty).
 - HashKey Gateway checkout + HSP/gateway dual-source verification has been validated in local environment (see demo recording).
 
+## Quick Start
+
+- Read system architecture and stack: [docs/system-architecture-stack.md](docs/system-architecture-stack.md)
+- Read escrow architecture details: [docs/payfi-escrow-architecture.md](docs/payfi-escrow-architecture.md)
+- Open interactive architecture view: [docs/payfidemo_architecture_overview_en.html](docs/payfidemo_architecture_overview_en.html)
 
 ## License
 

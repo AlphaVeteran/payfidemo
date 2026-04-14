@@ -2,7 +2,7 @@
 
 本文把 **链上多笔 `escrowId` 托管合约** 挂进 **PayFi 故事**：支付意图、状态同步、商户回调。面向黑客松 / 作品集演示，约定如下：
 
-- **链上默认**：**Base 测试网**（如 Base Sepolia）部署 Escrow、使用测试 USDC（或团队选定的测试 ERC20）；RPC、水龙头与钱包工具链成熟，便于完成 payfidemo。
+- **链上默认（仓库当前优先级）**：**HashKey Chain Testnet（`chainId=133`）** 为第一演示路径（与 **`.env.hashkey.testnet.example`**、**`docs/CHECKLIST-env-hashkey-local-neon.md`** 一致）；**Base Sepolia（`84532`）** 与 **本地 Anvil（`31337`）** 为备选 / 本地开发。各环境须使用 **同一网络上的 USDC 与 `ESCROW_ADDRESS`**，勿混链。
 - **结算消息层**：代码侧为 **`SettlementPort`** + 默认 **`MockSettlementAdapter`** + 内存 **`SettlementOutbox`**（可换持久化表）；**可插拔** 对接 **HashKey Settlement Protocol（HSP）等** HTTP/SDK，不因某一家 SDK 成熟度阻塞 demo。
 - **真实协议 SDK（可选）**：若需要对外展示「已接开放支付标准」，可 **并行** 集成 **[Coinbase x402](https://github.com/coinbase/x402)**（HTTP 402 + 客户端/服务端库），作为 **PayFi 技术佐证**；与 Escrow **并列演示**，不必强行把 x402 与每一笔 `release` 绑在同一交易里。
 
@@ -10,7 +10,7 @@
 
 ## 1. 一句话叙事（对外）
 
-> **用户**在商户处购买「课包 / 里程碑服务」，通过 **PayFi 支付意图** 锁定资金；**每一节课结束后**，用户与商家在应用内各确认一次，系统校验 **双签** 后在链上 **释放一期结算**；**周期届满** 未释放部分 **自动退回用户**。商户 ERP 通过 **Webhook** 接收与 **结算消息层** 一致的「请求—确认—回执」状态；链上结算跑在 **Base 测试网**，出站事件默认经 **`SettlementOutbox`**（Mock），后续可换 **HashKey Settlement Protocol 等** 真实 adapter。可选地，用 **x402** 演示「API / 机器支付」类 PayFi 能力，作为补充叙事。
+> **用户**在商户处购买「课包 / 里程碑服务」，通过 **PayFi 支付意图** 锁定资金；**每一节课结束后**，用户与商家在应用内各确认一次，系统校验 **双签** 后在链上 **释放一期结算**；**周期届满** 未释放部分 **自动退回用户**。商户 ERP 通过 **Webhook** 接收与 **结算消息层** 一致的「请求—确认—回执」状态；链上结算默认叙述为 **HashKey Testnet**（或所选环境的测试网），出站事件默认经 **`SettlementOutbox`**（Mock），后续可换 **HashKey Settlement Protocol 等** 真实 adapter。入金可走 **钱包直连托管合约**，或经 **HashKey 收银台**（回跳 **`/payment/result?intentId=…`** 后再 **`POST .../funding/tx`**，必要时经 **`GET .../gateway-reconciliation`** 从商户 API 取链上哈希）。可选地，用 **x402** 演示「API / 机器支付」类 PayFi 能力，作为补充叙事。
 
 链上 escrow 是 **结算执行层**；PayFi 演示重点在 **意图 ID、状态机、幂等回调**，而不是「只有合约」。
 
@@ -20,7 +20,7 @@
 
 | 层级 | 默认选择 | 说明 |
 |------|----------|------|
-| **L2 / 链** | **Base Sepolia**（或当前官方推荐的 Base 测试网） | 合约、`chainId`、区块浏览器链接写进 README；主网仅在有明确需求时再切。 |
+| **L2 / 链** | **HashKey Chain Testnet（133）**（主演示）；**Base Sepolia（84532）**、**Anvil（31337）** 为备选 | 合约、`chainId`、浏览器 URL 与 **`ESCROW_ADDRESS` / `USDC`** 须同网；切换链时同步环境变量与部署地址。 |
 | **资产** | 测试网 **USDC** 或标准 **ERC20 Mock** | 与 `amountTotal` 等字段 decimals 一致即可。 |
 | **结算消息层** | **Mock**：控制台 + DB（演示）`settlement_outbox` | **`SettlementPort` 实现可替换**；真实环境可接 **HashKey Settlement Protocol** 等，换 `HttpSettlementClient` / 厂商 SDK 适配器即可。 |
 | **开放支付标准（佐证）** | **可选 [x402](https://github.com/coinbase/x402)** | 例如：保护某只读 API（报价、条款 PDF、intent 元数据），返回 402 → 客户端按 x402 完成支付后再访问；与 **Escrow 课包释放** 可分两条故事线演示，降低耦合。 |
@@ -82,12 +82,13 @@
 
 ### 绑定到双签（EIP-712）
 
-在 **`Release` 的 typed data `message` 中增加**：
+在 **`Release` 的 typed data `message` 中包含**（与当前 `PayFiEscrow` / `release/prepare` 一致）：
 
-- `agreementHash: bytes32`
-- `termsVersion: string`
+- `escrowId`, `nonce`, `amount`, `merchant`, **`agreementHash: bytes32`**
 
-双方每次签 **本节课释放** 时，都包含 **同一锚点**，则链下可证明：「该次结算是在某版条款承诺下同意的」。
+**`termsVersion` 不进链上 typed data**，仅存 intent 与 Webhook，用于人类可读对账。
+
+双方每次签 **本节课释放** 时，**`agreementHash`** 与链下存储一致，则链下可证明：「该次结算是在该条款承诺下同意的」。
 
 ### 与链上 Escrow 的关系（两档）
 
@@ -126,7 +127,7 @@
 - **PayFi API**：权威状态机、存储 `intents`、触发 Webhook、可选代提交链上 tx（或返回 data 由前端发）。
 - **`MockSettlementAdapter`**（默认）：实现 **`SettlementPort.emit(kind, payload)`** → 写内存 **`SettlementOutbox`** + 控制台；**不调用外网**；真实协议就绪后换实现类即可（**同一 `SettlementPort` 接口**）。
 - **x402（可选）**：在独立路由或服务上启用，用于「付费再访问」的 API；详见 §1.1 与 §14。
-- **Escrow 合约**：**默认部署于 Base 测试网**；`createAndDeposit`、`releaseBySignatures`、`refund`、`IDisputeModule` 占位。
+- **Escrow 合约**：部署于所选 EVM 测试网（**当前文档与 WORKLOG 以 HashKey Testnet 为主路径**）；`createAndDeposit`、`releaseBySignatures`、`refund`、`IDisputeModule` 占位。
 
 ---
 
@@ -212,10 +213,20 @@
 
 ### `POST /intents/:intentId/funding/tx`
 
-用户已广播充值 tx 后上报（或 indexer 回调）。
+用户已广播充值 tx 后上报（或 indexer 回调）；**收银台回跳页**在解析到哈希后亦调用此接口。
 
 **Body**：`{ "txHash": "0x..." }`  
-**行为**：校验 receipt → 读 `escrowId` → `status=active`。`SettlementPort`：`INTENT_FUNDED`。
+**行为**：校验 receipt（`EscrowCreated` 或 HashKey 路径下的 **`registerDeposit`** 等）→ 读 `escrowId` → `status=active`。`SettlementPort`：`INTENT_FUNDED`。
+
+### `GET /intents/:intentId/gateway-reconciliation`
+
+**作用**：服务端使用商户凭证调用 HashKey **`GET /merchant/payments`**，与本地 intent 上的 **`hskCartMandateId` / `hskPaymentReqId`** 对账，解析 **`tx_signature`** 等链上哈希（详见 `src/hashkey/client.ts`）。供 **商户控制台对账展示**；前端 **`/payment/result`** 在 URL 无 tx 时亦依赖此接口辅助 **`funding/tx`**。
+
+---
+
+### `GET/POST /intents/:intentId/release/signatures`
+
+双签在链下暂存：**`POST`** 写入 **`userSig` / `merchantSig`**，并记录 **`userSigAt` / `merchantSigAt`**（ISO 8601）；清空签名时一并清除时间戳。**`GET`** 返回当前签名与时间戳，供 UI 展示「提交分期放款」前置条件。
 
 ---
 
@@ -227,29 +238,28 @@
 
 ```json
 {
-  "domain": { "name": "...", "version": "1", "chainId": 84532, "verifyingContract": "0x..." },
+  "domain": { "name": "PayFiEscrowDemo", "version": "1", "chainId": 133, "verifyingContract": "0x..." },
   "types": { "Release": [...] },
   "message": {
     "escrowId": "1",
     "nonce": "0",
     "amount": "100000000",
     "merchant": "0x...",
-    "agreementHash": "0x0123...abcd",
-    "termsVersion": "1.0.0"
+    "agreementHash": "0x0123...abcd"
   }
 }
 ```
 
-`agreementHash` / `termsVersion` **必须与** `GET /intents/:intentId` 中存储的一致，否则 API 应拒绝 `release/submit`。
+`agreementHash` **必须与** `GET /intents/:intentId` 中存储的一致；**`termsVersion` 仅保存在 intent / Webhook，不参与链上 EIP-712**（与 `release/prepare` 的 `note` 一致）。
 
-`chainId` 与默认链一致：演示用 **Base Sepolia 为 `84532`**（若切换网络需同步改环境变量与合约部署地址）。
+`chainId` 与 **`ESCROW_ADDRESS`** 所在链一致（例如 **HashKey Testnet `133`** 或 **Base Sepolia `84532`**）；切换网络需同步环境变量与合约部署地址。
 
 ---
 
 ### `POST /intents/:intentId/release/submit`
 
-**Body**：`{ "userSig": "0x", "merchantSig": "0x" }`  
-**行为**：调用合约 `releaseBySignatures`（服务端带 `relayer` 或返回 raw tx 给前端）。成功后 **`SettlementOutbox` / Webhook** `SETTLEMENT_RELEASED`。
+**Body**：`{ "userSig": "0x", "merchantSig": "0x" }`（可与已暂存的签名合并）  
+**行为**：链上模式下由 **`SUBMITTER_PRIVATE_KEY`** 对应账户 **`writeContract`** 调用 **`releaseBySignatures`**（用户/商户仅提供 EIP-712 签名，gas 由 submitter 支付）。成功后 **`SettlementOutbox` / Webhook** `SETTLEMENT_RELEASED`。
 
 ---
 
@@ -355,7 +365,7 @@ sequenceDiagram
 ## 11. 与链上 Escrow 的衔接点
 
 - 合约 `Release` 的 EIP-712 `domain.verifyingContract` **必须** 与 API 返回一致。
-- `message` 含 `escrowId`, `nonce`（= 合约 `releaseNonce`）, `amount`, `merchant`；**并含** `agreementHash`, `termsVersion`（链下签名完整性；**MVP 链上可不验**，见 §2.1）。
+- `message` 含 `escrowId`, `nonce`（= 合约 `releaseNonce`）, `amount`, `merchant`, `agreementHash`（**不含 `termsVersion`**，见 §2.1 与 `release/prepare` 的 `note`）。
 - 第一版可 **固定 `amount == amountPerLesson`**；最后一笔若扫尾，需在 `prepare` 里读链上 `remaining` 动态填入 message。
 
 ---
@@ -364,7 +374,7 @@ sequenceDiagram
 
 | 做 | 暂缓 |
 |----|------|
-| **Base 测试网** + 单 ERC20（测试 USDC 或 Mock） | 多链、主网 |
+| **HashKey Testnet / Base Sepolia / Anvil** 之一 + 单 ERC20（测试 USDC 或 Mock） | 多链、主网 |
 | **`MockSettlementAdapter`** + `SettlementOutbox` + 文档声明可插拔 | 真实 **HashKey Settlement Protocol 等** HTTP（待 SDK/文档就绪） |
 | （可选）**x402** 保护 1～2 个只读 API 作 PayFi 佐证 | 完整 x402 产品化与多 facilitator |
 | 单链 + 一种 ERC20 | 多代币路由 |
@@ -421,7 +431,7 @@ interface PayFiSettlementPort {
 }
 ```
 
-链上 Escrow **部署仍默认 Base 测试网**，合约接口 **不必** 为换结算适配器而改；生产上要审计 **谁有权调 `release`** 是否与协议侧确认一致（**oracle / relayer 规则** 超出本 demo 范围）。
+链上 Escrow **部署于所选测试网**（当前仓库优先文档化 **HashKey Testnet**），合约接口 **不必** 为换结算适配器而改；生产上要审计 **谁有权调 `release`** 是否与协议侧确认一致（**oracle / relayer 规则** 超出本 demo 范围）。
 
 **厂商 SDK 未就绪时**：保持 **`MockSettlementAdapter` + `SettlementPort`**，交付物仍完整；对外说明「消息层可切换」即可。
 
@@ -430,7 +440,7 @@ interface PayFiSettlementPort {
 当需要 **成熟开源 SDK** 支撑叙事时，并行引入 **[coinbase/x402](https://github.com/coinbase/x402)**（见官方文档与示例）：
 
 - **典型用法**：某路由在未支付时返回 **HTTP 402** 与支付挑战；客户端用 x402 SDK 完成支付后携带凭证重试，服务端验证后返回资源。
-- **与 Escrow 的关系**：推荐 **解耦**——例如 x402 用于「拉取课包条款 PDF / 定价元数据 / 内部报价 API」，Escrow 仍管 **资金托管与分次释放**；演示时两条路径均在 **Base** 生态内叙述更连贯。
+- **与 Escrow 的关系**：推荐 **解耦**——例如 x402 用于「拉取课包条款 PDF / 定价元数据 / 内部报价 API」，Escrow 仍管 **资金托管与分次释放**；演示时两条路径可与当前所选 **EVM 测试网** 叙述一致。
 - **开关**：用环境变量或配置启用/禁用 x402 路由，避免本地开发强依赖 facilitator。
 
 ### 14.3 链迁移（若未来必须）

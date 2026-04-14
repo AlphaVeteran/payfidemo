@@ -35,6 +35,14 @@ export interface IntentRecord {
   expiresAt: number | null;
   releaseNonce: number;
   createdAt: string;
+  paymentUrl?: string;
+  hskPaymentReqId?: string;
+  hskCartMandateId?: string;
+  userSig?: string;
+  merchantSig?: string;
+  /** ISO 8601：服务端在保存对应角色签名时写入；清空签名时一并清除 */
+  userSigAt?: string;
+  merchantSigAt?: string;
 }
 
 export interface CreateIntentBody {
