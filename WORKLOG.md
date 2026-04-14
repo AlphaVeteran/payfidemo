@@ -49,6 +49,9 @@
 ## 当日记录（2026-04-14）
 
 【今日完成】
+- **Conflux Cross-Space（Core -> eSpace）端到端实测通过**：完成 `CoreOrderVault`、`ESpaceEscrowAdapter`、`PayFiEscrow` 部署；修复部署/联调链路中的多项阻塞（Core Space RPC 与 EVM RPC 混用、部署脚本私钥变量名不一致、Conflux eSpace 对 `PUSH0` 兼容导致部署交易 OOG，`foundry.toml` 固化 `evm_version=paris`、relayer/demo 脚本 RPC 变量优先级修正）；最终跑通 `approve -> core order deposit -> relayer mapping` 全流程并拿到 escrow 映射结果。
+- **Cross-Space 关键链上证据已沉淀**（chainId=71）：Approve `0x407e0c9ee6c4a21c3a43e04e93f99993942c5d992970792a87972bfa9ab70dfa`、Core order deposit `0x6c3cde5d1adffb3fd983005ff09c0573a436c4f20ee995fa311c274cfa475bf4`、eSpace mapping `0x300c7ec833c0633cebdc0642d5f9ea303c0525c57cfd77f7b15e2adb3de9edea`；`coreOrderId=1776175312179`，`escrowId=10429080304411244359614541526982370061373641461870929980440368445856475775012`。
+- **本地 Cross-Space 配置补齐**：`.env` 回填 `CORE_ORDER_VAULT_ADDRESS=0xAe26E03F8C0E7c8B0ACe8dc8B825A498f8925Fdf`、`ESPACE_ADAPTER_ADDRESS=0x8d7d93043768f863DcCAbD0B9c4189222fFc1d38`、`CORE_DEPOSIT_ASSET_ADDRESS=0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca`；并明确钱包连接网络应为 **eSpace Testnet（71）**（非 Core Space）。
 - **线上 `/user` 新建意向 `Failed to fetch` 排查与修复**：定位为前端构建期 `NEXT_PUBLIC_PAYFI_API_URL` 误指向本地（`http://localhost:8787` / `127.0.0.1`）导致 HTTPS 页面请求失败；确认 Railway Base Sepolia API 健康可用（`/health` 返回 `ok: true`、`persistence: postgres`）。在 `frontend/lib/payfi-api.ts` 为 `createIntent` 增加网络异常捕获与环境提示：当基址仍为本地地址时，明确提示需改为公网 `https://<api-host>` 并重新部署前端（`NEXT_PUBLIC_*` 为构建期注入）。
 - **Base Sepolia 环境切换**：`scripts/switch-env.sh` 增加 `base-sepolia` 模式（模板 `.env.base.sepolia.example`、可选 overlay `.env.base.sepolia.private`）；根 `.env.example` 补充说明；`package.json` 增加 `env:switch:base-sepolia` / `dev:base-sepolia`。
 - **本地前端 ↔ API（Chrome PNA）**：`src/server.ts` 对响应增加 `Access-Control-Allow-Private-Network`，避免 `localhost` 页面请求 `127.0.0.1` API 时 `/health` 与跨域请求被浏览器拦截；`frontend/lib/payfi-api.ts` 默认 API 基址改为 `http://localhost:8787`；新增 **`frontend/.env.base.sepolia.example`** 与根模板字段对齐。
@@ -57,6 +60,9 @@
 - **前端提交流程**：用户工作台与商家侧在「提交分期放款」前调用 `release/prepare` 校验 nonce；提交成功后用户页合并 `ReleaseSubmitResponse` 到当前 `intent`；商家控制台 `reload` 支持 **`releaseSnapshot`** 合并列表行，减少「提交后无更新」观感。
 
 【代码证据】
+- `script/DeployCoreOrderVault.s.sol`、`script/DeployCrossSpaceEspace.s.sol`
+- `scripts/relay-core-to-espace.mjs`、`scripts/cross-space-demo.mjs`
+- `foundry.toml`、`.env`
 - `scripts/switch-env.sh`、`.env.base.sepolia.example`、`.env.example`、`.gitignore`、`package.json`
 - `src/server.ts`、`src/routes/intents.ts`
 - `frontend/.env.base.sepolia.example`、`frontend/.env.example`、`frontend/lib/payfi-api.ts`
