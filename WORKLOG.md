@@ -49,6 +49,7 @@
 ## 当日记录（2026-04-14）
 
 【今日完成】
+- **线上 `/user` 新建意向 `Failed to fetch` 排查与修复**：定位为前端构建期 `NEXT_PUBLIC_PAYFI_API_URL` 误指向本地（`http://localhost:8787` / `127.0.0.1`）导致 HTTPS 页面请求失败；确认 Railway Base Sepolia API 健康可用（`/health` 返回 `ok: true`、`persistence: postgres`）。在 `frontend/lib/payfi-api.ts` 为 `createIntent` 增加网络异常捕获与环境提示：当基址仍为本地地址时，明确提示需改为公网 `https://<api-host>` 并重新部署前端（`NEXT_PUBLIC_*` 为构建期注入）。
 - **Base Sepolia 环境切换**：`scripts/switch-env.sh` 增加 `base-sepolia` 模式（模板 `.env.base.sepolia.example`、可选 overlay `.env.base.sepolia.private`）；根 `.env.example` 补充说明；`package.json` 增加 `env:switch:base-sepolia` / `dev:base-sepolia`。
 - **本地前端 ↔ API（Chrome PNA）**：`src/server.ts` 对响应增加 `Access-Control-Allow-Private-Network`，避免 `localhost` 页面请求 `127.0.0.1` API 时 `/health` 与跨域请求被浏览器拦截；`frontend/lib/payfi-api.ts` 默认 API 基址改为 `http://localhost:8787`；新增 **`frontend/.env.base.sepolia.example`** 与根模板字段对齐。
 - **链上分期放款状态一致性**：`POST .../release/submit` 在交易确认成功后改为**确定性递增**本地 `releaseNonce` / `releaseCount` / `releasedTotal`（不再依赖交易后立即 `eth_call`，避免 Alchemy 等 RPC 短暂返回旧快照导致 DB 与链不一致）；成功响应体补充 **`intentId`、`releaseNonce`** 等字段，便于前端即时展示。

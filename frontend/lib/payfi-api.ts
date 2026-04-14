@@ -22,6 +22,15 @@ export const payfiHttpBase = (): string => {
 
 const apiRoot = (): string => `${payfiHttpBase()}/api/payfi/v1`;
 
+function fetchFailedHint(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const base = payfiHttpBase();
+  const pointsToLocalHost =
+    base.includes("localhost") || base.includes("127.0.0.1");
+  if (!pointsToLocalHost) return `${msg} (${base})`;
+  return `${msg} — NEXT_PUBLIC_PAYFI_API_URL is ${base}. On a deployed HTTPS site, set it to your public API base (https://…, no trailing slash) and redeploy the frontend.`;
+}
+
 export type PayFiHealthResponse = {
   ok: boolean;
   /** 服务端 intent 存储：`postgres` 表示已连接数据库；`memory` 为进程内内存 */
@@ -79,11 +88,16 @@ export async function createIntent(body: Record<string, unknown>): Promise<{
   paymentUrl?: string | null;
   hskPaymentReqId?: string | null;
 }> {
-  const res = await fetch(`${apiRoot()}/intents`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiRoot()}/intents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new Error(fetchFailedHint(e));
+  }
   const data: {
     error?: string;
     intentId?: string;
