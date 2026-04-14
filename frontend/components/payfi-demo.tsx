@@ -1752,25 +1752,27 @@ export default function PayFiDemo() {
                   ) : null}
                 </p>
               )}
-              <HashkeyFundingAlternative
-                paymentUrl={intent.paymentUrl}
-                registerTxValue={registerFundingTxInput}
-                onRegisterTxChange={setRegisterFundingTxInput}
-                onRegisterSubmit={onRegisterFundingTxPaste}
-                busy={busy}
-                labels={{
-                  eitherOrNote: text.fundEitherOrNote,
-                  cardTitle: text.hspAlternativeCardTitle,
-                  gatewayTitle: text.gatewayOptionalTitle,
-                  gatewayOpen: text.gatewayOpen,
-                  noPaymentUrl: text.hspNoPaymentUrl,
-                  registerTitle: text.hspRegisterTitle,
-                  registerHint: text.hspRegisterHint,
-                  registerPlaceholder: text.registerTxPlaceholder,
-                  registerSubmit: text.registerTxSubmit,
-                  registerBusy: text.registerTxBusy,
-                }}
-              />
+              {targetChainId === HASHKEY_TESTNET_CHAIN_ID && (
+                <HashkeyFundingAlternative
+                  paymentUrl={intent.paymentUrl}
+                  registerTxValue={registerFundingTxInput}
+                  onRegisterTxChange={setRegisterFundingTxInput}
+                  onRegisterSubmit={onRegisterFundingTxPaste}
+                  busy={busy}
+                  labels={{
+                    eitherOrNote: text.fundEitherOrNote,
+                    cardTitle: text.hspAlternativeCardTitle,
+                    gatewayTitle: text.gatewayOptionalTitle,
+                    gatewayOpen: text.gatewayOpen,
+                    noPaymentUrl: text.hspNoPaymentUrl,
+                    registerTitle: text.hspRegisterTitle,
+                    registerHint: text.hspRegisterHint,
+                    registerPlaceholder: text.registerTxPlaceholder,
+                    registerSubmit: text.registerTxSubmit,
+                    registerBusy: text.registerTxBusy,
+                  }}
+                />
+              )}
             </>
           )}
         </section>

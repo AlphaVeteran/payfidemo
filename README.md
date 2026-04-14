@@ -28,8 +28,9 @@ PayFi Demo demonstrates a full payment-finance flow:
 
 ## Demo
 
-- Demo Video: [https://youtu.be/n32dgEcimV8](https://youtu.be/n32dgEcimV8)
-- Live Demo: [https://payfidemo-frontend-hashkey-qa.up.railway.app/](https://payfidemo-frontend-hashkey-qa.up.railway.app)
+- Demo Video : [https://youtu.be/n32dgEcimV8](https://youtu.be/n32dgEcimV8)
+- Live Demo (Hashkey Chain Testnet, ChainID: 133)  [https://payfidemo-frontend-hashkey-qa.up.railway.app/](https://payfidemo-frontend-hashkey-qa.up.railway.app)
+- Live Demo (Base Sepolia, ChainID: 84532). [https://payfidemo-frontend-base-sepolia.up.railway.app/](https://payfidemo-frontend-base-sepolia.up.railway.app/)
 
 ### Railway Public Environment Status (HashKey Testnet)
 

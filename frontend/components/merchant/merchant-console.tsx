@@ -15,6 +15,7 @@ import GatewayReconciliationCard from "@/components/merchant/gateway-reconciliat
 import MerchantReleasePanel from "@/components/merchant/merchant-release-panel";
 import PayFiLogo from "@/components/ui/payfi-logo";
 import { useI18n } from "@/lib/i18n";
+import { HASHKEY_TESTNET_CHAIN_ID } from "@/lib/demo-network";
 import { targetChain, targetChainId } from "@/lib/wagmi-config";
 import {
   getIntent,
@@ -707,7 +708,9 @@ export default function MerchantConsole() {
           ) : (
             <>
               <MerchantReleasePanel intent={selectedIntent} onIntentRefresh={reload} />
-              <GatewayReconciliationCard intent={selectedIntent} />
+              {targetChainId === HASHKEY_TESTNET_CHAIN_ID && (
+                <GatewayReconciliationCard intent={selectedIntent} />
+              )}
             </>
           )}
         </section>
