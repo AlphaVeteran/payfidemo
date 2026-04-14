@@ -26,6 +26,8 @@
     "local-flow:release": "node scripts/local-flow.mjs release",
     "local-flow:release-until-settled": "node scripts/local-flow.mjs release-until-settled",
     "local-flow:run": "node scripts/local-flow.mjs run",
+    "relayer:core-to-espace": "node scripts/relay-core-to-espace.mjs",
+    "demo:cross-space": "node scripts/cross-space-demo.mjs",
     "db:migrate": "tsx src/db/migrate-cli.ts"
   },
   "engines": {
