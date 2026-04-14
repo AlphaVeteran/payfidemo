@@ -1151,6 +1151,17 @@ export default function PayFiDemo() {
     releaseSubmitInFlightRef.current = true;
     setBusy("submit-release");
     try {
+      // Force a fresh chain-backed nonce snapshot before submit.
+      // If nonce already advanced, clear stale signatures and guide re-sign.
+      const prep = await releasePrepare(intent.intentId);
+      const prepMsg = releaseMessageFromApi(prep.typedData.message as Record<string, unknown>);
+      if (prepMsg.nonce !== BigInt(intent.releaseNonce)) {
+        clearLocalReleaseState(intent.intentId);
+        setReleaseHint(text.nonceDesyncHint);
+        await refreshIntent();
+        return;
+      }
+
       const sigs = await getReleaseSignatures(intent.intentId);
       const submitUserSig = userSig ?? sigs.userSig;
       const submitMerchantSig = merchantSig ?? sigs.merchantSig;
@@ -1159,6 +1170,15 @@ export default function PayFiDemo() {
       }
       const res = await releaseSubmit(intent.intentId, submitUserSig, submitMerchantSig);
       setReleaseResult(res);
+      if (res.ok && intent) {
+        setIntent({
+          ...intent,
+          status: res.status as IntentRecord["status"],
+          releaseNonce: res.releaseNonce,
+          releaseCount: res.releaseCount,
+          releasedTotal: res.releasedTotal,
+        });
+      }
       clearLocalReleaseState(intent.intentId);
       setReleaseSubmitCooldown(true);
       window.setTimeout(() => setReleaseSubmitCooldown(false), 4500);
@@ -1732,25 +1752,27 @@ export default function PayFiDemo() {
                   ) : null}
                 </p>
               )}
-              <HashkeyFundingAlternative
-                paymentUrl={intent.paymentUrl}
-                registerTxValue={registerFundingTxInput}
-                onRegisterTxChange={setRegisterFundingTxInput}
-                onRegisterSubmit={onRegisterFundingTxPaste}
-                busy={busy}
-                labels={{
-                  eitherOrNote: text.fundEitherOrNote,
-                  cardTitle: text.hspAlternativeCardTitle,
-                  gatewayTitle: text.gatewayOptionalTitle,
-                  gatewayOpen: text.gatewayOpen,
-                  noPaymentUrl: text.hspNoPaymentUrl,
-                  registerTitle: text.hspRegisterTitle,
-                  registerHint: text.hspRegisterHint,
-                  registerPlaceholder: text.registerTxPlaceholder,
-                  registerSubmit: text.registerTxSubmit,
-                  registerBusy: text.registerTxBusy,
-                }}
-              />
+              {targetChainId === HASHKEY_TESTNET_CHAIN_ID && (
+                <HashkeyFundingAlternative
+                  paymentUrl={intent.paymentUrl}
+                  registerTxValue={registerFundingTxInput}
+                  onRegisterTxChange={setRegisterFundingTxInput}
+                  onRegisterSubmit={onRegisterFundingTxPaste}
+                  busy={busy}
+                  labels={{
+                    eitherOrNote: text.fundEitherOrNote,
+                    cardTitle: text.hspAlternativeCardTitle,
+                    gatewayTitle: text.gatewayOptionalTitle,
+                    gatewayOpen: text.gatewayOpen,
+                    noPaymentUrl: text.hspNoPaymentUrl,
+                    registerTitle: text.hspRegisterTitle,
+                    registerHint: text.hspRegisterHint,
+                    registerPlaceholder: text.registerTxPlaceholder,
+                    registerSubmit: text.registerTxSubmit,
+                    registerBusy: text.registerTxBusy,
+                  }}
+                />
+              )}
             </>
           )}
         </section>

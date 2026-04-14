@@ -13,6 +13,8 @@ import GatewayReconciliationCard from "@/components/merchant/gateway-reconciliat
 import IntentStatusHeader from "@/components/shared/intent-status-header";
 import PayFiLogo from "@/components/ui/payfi-logo";
 import { useI18n } from "@/lib/i18n";
+import { HASHKEY_TESTNET_CHAIN_ID } from "@/lib/demo-network";
+import { targetChainId } from "@/lib/wagmi-config";
 
 type Props = {
   intentId: string;
@@ -234,7 +236,7 @@ export default function IntentDetail({ intentId }: Props) {
             </div>
           </section>
 
-          {role === "merchant" && (
+          {role === "merchant" && targetChainId === HASHKEY_TESTNET_CHAIN_ID && (
             <section className="payfi-card space-y-3 p-5">
               <GatewayReconciliationCard intent={intent} />
             </section>

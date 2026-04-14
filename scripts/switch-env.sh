@@ -8,12 +8,16 @@ ENV_LOCAL_FILE=".env.local.anvil"
 ENV_HASHKEY_FILE=".env.hashkey.testnet"
 ENV_HASHKEY_TEMPLATE=".env.hashkey.testnet.example"
 ENV_HASHKEY_PRIVATE_FILE=".env.hashkey.private"
+ENV_BASE_SEPOLIA_FILE=".env.base.sepolia"
+ENV_BASE_SEPOLIA_TEMPLATE=".env.base.sepolia.example"
+ENV_BASE_SEPOLIA_PRIVATE_FILE=".env.base.sepolia.private"
 
 usage() {
   cat <<'EOF'
 Usage:
   bash scripts/switch-env.sh local
   bash scripts/switch-env.sh hashkey [--refresh]
+  bash scripts/switch-env.sh base-sepolia [--refresh]
 
 What it does:
   - Forces the repo root `.env` to become a symlink to the desired config file.
@@ -24,6 +28,11 @@ What it does:
       - With `--refresh`, it re-copies from the same template (fallback `.env.example`).
       - If `.env.hashkey.private` exists, it overlays those key=value pairs into `.env.hashkey.testnet`
         after copy, so secrets (APP_KEY/APP_SECRET, etc.) survive refresh.
+  - base-sepolia:
+      - If `.env.base.sepolia` does not exist yet, it copies `.env.base.sepolia.example` (Chain 84532 + Circle test USDC) into it; if missing, falls back to `.env.example`.
+      - With `--refresh`, it re-copies from the same template (fallback `.env.example`).
+      - If `.env.base.sepolia.private` exists, it overlays those key=value pairs into `.env.base.sepolia`
+        after copy, so secrets survive refresh.
 EOF
 }
 
@@ -132,6 +141,37 @@ case "$mode" in
     overlay_env_file "$ENV_HASHKEY_FILE" "$ENV_HASHKEY_PRIVATE_FILE"
     echo "[switch-env] Switching to hashkey testnet env ($ENV_HASHKEY_FILE)"
     force_link "$ENV_HASHKEY_FILE"
+    ;;
+  base-sepolia)
+    if [[ ! -e "$ENV_LOCAL_FILE" ]]; then
+      if [[ -e ".env" ]]; then
+        echo "[switch-env] Preserving current .env into $ENV_LOCAL_FILE"
+        cp -L ".env" "$ENV_LOCAL_FILE"
+      else
+        echo "[switch-env] WARNING: .env does not exist; cannot create $ENV_LOCAL_FILE backup" >&2
+      fi
+    fi
+
+    base_sepolia_template_copy() {
+      if [[ -f "$ENV_BASE_SEPOLIA_TEMPLATE" ]]; then
+        echo "[switch-env] Using template $ENV_BASE_SEPOLIA_TEMPLATE -> $ENV_BASE_SEPOLIA_FILE"
+        cp "$ENV_BASE_SEPOLIA_TEMPLATE" "$ENV_BASE_SEPOLIA_FILE"
+      else
+        echo "[switch-env] WARNING: $ENV_BASE_SEPOLIA_TEMPLATE missing; fallback .env.example" >&2
+        cp ".env.example" "$ENV_BASE_SEPOLIA_FILE"
+      fi
+    }
+    if [[ "$refresh" == "--refresh" ]]; then
+      base_sepolia_template_copy
+    else
+      if [[ ! -e "$ENV_BASE_SEPOLIA_FILE" ]]; then
+        echo "[switch-env] Creating $ENV_BASE_SEPOLIA_FILE from Base Sepolia template"
+        base_sepolia_template_copy
+      fi
+    fi
+    overlay_env_file "$ENV_BASE_SEPOLIA_FILE" "$ENV_BASE_SEPOLIA_PRIVATE_FILE"
+    echo "[switch-env] Switching to Base Sepolia env ($ENV_BASE_SEPOLIA_FILE)"
+    force_link "$ENV_BASE_SEPOLIA_FILE"
     ;;
   *)
     echo "[switch-env] ERROR: unknown mode: $mode" >&2
