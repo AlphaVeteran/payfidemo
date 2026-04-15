@@ -15,6 +15,19 @@ type Role = "user" | "merchant";
 const roleStorageKey = "payfi.role";
 const recentStorageKey = "payfi.lastIntentId";
 
+function contractExplorerUrl(
+  explorerBase: string,
+  address: string,
+  explicitUrl?: string,
+): string | null {
+  const explicit = explicitUrl?.trim();
+  if (explicit) return explicit;
+  const base = explorerBase.trim().replace(/\/$/, "");
+  const addr = address.trim();
+  if (!base || !addr) return null;
+  return `${base}/address/${addr}`;
+}
+
 function statusText(status: string, locale: "zh-CN" | "zh-TW" | "en") {
   switch (status) {
     case "awaiting_funding":
@@ -43,6 +56,29 @@ export default function RoleEntry() {
   const hashkeyGatewayUrlEnv =
     process.env.NEXT_PUBLIC_HASHKEY_MERCHANT_GATEWAY_URL?.trim() ?? "";
 
+  const crossSpaceEnabled =
+    process.env.NEXT_PUBLIC_CROSS_SPACE_ENABLED?.trim().toLowerCase() === "true";
+  const coreSpaceChainIdEnv = process.env.NEXT_PUBLIC_CORESPACE_CHAIN_ID?.trim() ?? "";
+  const coreOrderVaultEnv = process.env.NEXT_PUBLIC_CORE_ORDER_VAULT_ADDRESS?.trim() ?? "";
+  const coreOrderVaultCfxEnv = process.env.NEXT_PUBLIC_CORE_ORDER_VAULT_CFX_ADDRESS?.trim() ?? "";
+  const coreOrderVaultExplorerUrlEnv =
+    process.env.NEXT_PUBLIC_CORE_ORDER_VAULT_EXPLORER_URL?.trim() ?? "";
+  const coreDepositAssetEnv = process.env.NEXT_PUBLIC_CORE_DEPOSIT_ASSET_ADDRESS?.trim() ?? "";
+  const coreExplorerBaseEnv = process.env.NEXT_PUBLIC_CORESPACE_EXPLORER_BASE_URL?.trim() ?? "";
+  const espaceChainIdCrossEnv = process.env.NEXT_PUBLIC_ESPACE_CHAIN_ID?.trim() ?? "";
+  const payFiEscrowDisplayEnv =
+    process.env.NEXT_PUBLIC_PAYFI_ESCROW_ADDRESS?.trim() || escrowAddressEnv;
+  const espaceAdapterEnv = process.env.NEXT_PUBLIC_ESPACE_ADAPTER_ADDRESS?.trim() ?? "";
+  const espaceExplorerBaseEnv = process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL?.trim() ?? "";
+  const coreOrderVaultDisplayEnv = coreOrderVaultCfxEnv || coreOrderVaultEnv;
+  const coreVaultExplorerUrl = contractExplorerUrl(
+    coreExplorerBaseEnv,
+    coreOrderVaultDisplayEnv,
+    coreOrderVaultExplorerUrlEnv,
+  );
+  const payFiEscrowExplorerUrl = contractExplorerUrl(espaceExplorerBaseEnv, payFiEscrowDisplayEnv);
+  const espaceAdapterExplorerUrl = contractExplorerUrl(espaceExplorerBaseEnv, espaceAdapterEnv);
+
   const text = {
     "zh-CN": {
       subtitle: "选择角色进入流程，或在下方最近记录中打开已有意向。",
@@ -65,6 +101,22 @@ export default function RoleEntry() {
       escrowContractLabel: "托管合约地址",
       hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
       valueUnset: "（当前未配置）",
+      crossSpaceSectionTitle: "Cross-Space（Conflux · Core → eSpace）",
+      crossSpaceCardCoreTitle: "Core Space",
+      crossSpaceCardCoreSubtitle: "CoreOrderVault（下单与保证金）",
+      crossSpaceCardEspaceTitle: "eSpace",
+      crossSpaceCardEspaceSubtitle: "托管执行层",
+      chainIdShortLabel: "Chain ID",
+      coreVaultLabel: "CoreOrderVault",
+      payFiEscrowLabel: "PayFiEscrow",
+      espaceAdapterLabel: "ESpaceEscrowAdapter",
+      espaceAdapterNote:
+        "Relayer 监听 Core 事件后调用 Adapter 的 createEscrowFromCore，将订单映射为 eSpace escrowId。",
+      coreDepositAssetLabel: "保证金代币（Core）",
+      viewOnExplorer: "在浏览器中查看",
+      walletHintTitle: "钱包连接",
+      walletHintBody:
+        "本演示 dApp 主流程在 eSpace：请使用 MetaMask（或兼容钱包）连接 Conflux eSpace Testnet。Core Space 下单与保证金请使用 Fluent 连接 Conflux Core Testnet。",
     },
     "zh-TW": {
       subtitle: "選擇角色進入流程，或在下方最近記錄中開啟已有意向。",
@@ -87,6 +139,22 @@ export default function RoleEntry() {
       escrowContractLabel: "託管合約地址",
       hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
       valueUnset: "（目前未設定）",
+      crossSpaceSectionTitle: "Cross-Space（Conflux · Core → eSpace）",
+      crossSpaceCardCoreTitle: "Core Space",
+      crossSpaceCardCoreSubtitle: "CoreOrderVault（下單與保證金）",
+      crossSpaceCardEspaceTitle: "eSpace",
+      crossSpaceCardEspaceSubtitle: "託管執行層",
+      chainIdShortLabel: "Chain ID",
+      coreVaultLabel: "CoreOrderVault",
+      payFiEscrowLabel: "PayFiEscrow",
+      espaceAdapterLabel: "ESpaceEscrowAdapter",
+      espaceAdapterNote:
+        "Relayer 監聽 Core 事件後呼叫 Adapter 的 createEscrowFromCore，將訂單映射為 eSpace escrowId。",
+      coreDepositAssetLabel: "保證金代幣（Core）",
+      viewOnExplorer: "在瀏覽器中查看",
+      walletHintTitle: "錢包連線",
+      walletHintBody:
+        "本示範 dApp 主流程在 eSpace：請使用 MetaMask（或相容錢包）連線 Conflux eSpace Testnet。Core Space 下單與保證金請使用 Fluent 連線 Conflux Core Testnet。",
     },
     en: {
       subtitle:
@@ -110,6 +178,22 @@ export default function RoleEntry() {
       escrowContractLabel: "Escrow contract address",
       hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
       valueUnset: "(not set)",
+      crossSpaceSectionTitle: "Cross-Space (Conflux · Core → eSpace)",
+      crossSpaceCardCoreTitle: "Core Space",
+      crossSpaceCardCoreSubtitle: "CoreOrderVault (order & deposit)",
+      crossSpaceCardEspaceTitle: "eSpace",
+      crossSpaceCardEspaceSubtitle: "Escrow execution layer",
+      chainIdShortLabel: "Chain ID",
+      coreVaultLabel: "CoreOrderVault",
+      payFiEscrowLabel: "PayFiEscrow",
+      espaceAdapterLabel: "ESpaceEscrowAdapter",
+      espaceAdapterNote:
+        "After the relayer observes Core events, it calls createEscrowFromCore on the adapter to map orders to an eSpace escrowId.",
+      coreDepositAssetLabel: "Deposit asset (Core)",
+      viewOnExplorer: "View on explorer",
+      walletHintTitle: "Wallets",
+      walletHintBody:
+        "Main dApp flows run on eSpace: connect Conflux eSpace Testnet with MetaMask (or an EVM-compatible wallet). For Core Space orders and deposits, use Fluent on Conflux Core Testnet.",
     },
   }[locale];
   const [role, setRole] = useState<Role>("user");
@@ -197,6 +281,98 @@ export default function RoleEntry() {
             <p className="break-all font-mono text-[11px] text-zinc-400">
               {hashkeyGatewayUrlEnv || text.valueUnset}
             </p>
+          </div>
+        </section>
+      )}
+
+      {crossSpaceEnabled && (
+        <section className="payfi-card space-y-4 p-5">
+          <h2 className="text-sm font-semibold text-zinc-200">{text.crossSpaceSectionTitle}</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-900/40 p-4">
+              <div>
+                <p className="text-sm font-semibold text-zinc-100">{text.crossSpaceCardCoreTitle}</p>
+                <p className="mt-0.5 text-xs text-zinc-500">{text.crossSpaceCardCoreSubtitle}</p>
+              </div>
+              <div className="space-y-1 text-xs">
+                <p className="payfi-label">{text.chainIdShortLabel}</p>
+                <p className="break-all font-mono text-[11px] text-zinc-400">
+                  {coreSpaceChainIdEnv || text.valueUnset}
+                </p>
+              </div>
+              <div className="space-y-1 text-xs">
+                <p className="payfi-label">{text.coreVaultLabel}</p>
+                <p className="break-all font-mono text-[11px] text-zinc-400">
+                  {coreOrderVaultDisplayEnv || text.valueUnset}
+                </p>
+                {coreVaultExplorerUrl && (
+                  <a
+                    href={coreVaultExplorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block pt-1 text-[11px] text-sky-400/95 underline-offset-2 hover:underline"
+                  >
+                    {text.viewOnExplorer}
+                  </a>
+                )}
+              </div>
+              {coreDepositAssetEnv ? (
+                <div className="space-y-1 text-xs">
+                  <p className="payfi-label">{text.coreDepositAssetLabel}</p>
+                  <p className="break-all font-mono text-[11px] text-zinc-400">{coreDepositAssetEnv}</p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-900/40 p-4">
+              <div>
+                <p className="text-sm font-semibold text-zinc-100">{text.crossSpaceCardEspaceTitle}</p>
+                <p className="mt-0.5 text-xs text-zinc-500">{text.crossSpaceCardEspaceSubtitle}</p>
+              </div>
+              <div className="space-y-1 text-xs">
+                <p className="payfi-label">{text.chainIdShortLabel}</p>
+                <p className="break-all font-mono text-[11px] text-zinc-400">
+                  {espaceChainIdCrossEnv || text.valueUnset}
+                </p>
+              </div>
+              <div className="space-y-1 text-xs">
+                <p className="payfi-label">{text.payFiEscrowLabel}</p>
+                <p className="break-all font-mono text-[11px] text-zinc-400">
+                  {payFiEscrowDisplayEnv || text.valueUnset}
+                </p>
+                {payFiEscrowExplorerUrl && (
+                  <a
+                    href={payFiEscrowExplorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block pt-1 text-[11px] text-sky-400/95 underline-offset-2 hover:underline"
+                  >
+                    {text.viewOnExplorer}
+                  </a>
+                )}
+              </div>
+              <div className="space-y-1 text-xs">
+                <p className="payfi-label">{text.espaceAdapterLabel}</p>
+                <p className="break-all font-mono text-[11px] text-zinc-400">
+                  {espaceAdapterEnv || text.valueUnset}
+                </p>
+                {espaceAdapterExplorerUrl && (
+                  <a
+                    href={espaceAdapterExplorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block pt-1 text-[11px] text-sky-400/95 underline-offset-2 hover:underline"
+                  >
+                    {text.viewOnExplorer}
+                  </a>
+                )}
+              </div>
+              <p className="text-[11px] leading-relaxed text-zinc-500">{text.espaceAdapterNote}</p>
+            </div>
+          </div>
+          <div className="space-y-1.5 rounded-md border border-sky-900/35 bg-sky-950/25 px-3 py-2.5">
+            <p className="payfi-label">{text.walletHintTitle}</p>
+            <p className="text-[11px] leading-relaxed text-zinc-300">{text.walletHintBody}</p>
           </div>
         </section>
       )}

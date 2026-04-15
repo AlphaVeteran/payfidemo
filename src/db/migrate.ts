@@ -20,5 +20,20 @@ CREATE TABLE IF NOT EXISTS payfi_settlement_outbox (
 
 CREATE INDEX IF NOT EXISTS idx_payfi_outbox_created
   ON payfi_settlement_outbox (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS payfi_core_intent_links (
+  core_order_id TEXT PRIMARY KEY,
+  escrow_id TEXT NOT NULL,
+  intent_id TEXT,
+  mapped_tx_hash TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payfi_core_links_escrow
+  ON payfi_core_intent_links (escrow_id);
+
+CREATE INDEX IF NOT EXISTS idx_payfi_core_links_intent
+  ON payfi_core_intent_links (intent_id);
   `);
 }

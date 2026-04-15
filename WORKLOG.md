@@ -46,6 +46,31 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-15）
+
+【今日完成】
+- **Cross-Space 三标识打通落地**：实现 `coreOrderId <-> escrowId <-> intentId` 可关联查询链路。新增 `core-intent link` 存储抽象（内存 + Postgres），并在 funding 成功后按 `escrowId` 自动补齐 `intentId` 关联，解决此前仅“弱关联”问题。
+- **后端 API 扩展**：`src/routes/intents.ts` 增加映射写入与查询接口：
+  - `POST /api/payfi/v1/intents/core-links/mapped`
+  - `GET /api/payfi/v1/intents/core-links/by-core-order/:coreOrderId`
+  - `GET /api/payfi/v1/intents/core-links/by-escrow/:escrowId`
+  - `GET /api/payfi/v1/intents/core-links/by-intent/:intentId`
+- **Relayer 自动回写映射**：`scripts/relay-core-to-espace.mjs` 在 `createEscrowFromCore` 成功后读取 `CoreOrderMapped` 事件中的 `escrowId`，再回调 API 写入 `coreOrderId -> escrowId`；新增 `PAYFI_API_URL` 配置项（`.env.conflux.testnet.example`）。
+- **数据库迁移补齐**：`src/db/migrate.ts` 新增 `payfi_core_intent_links` 表及 `escrow_id` / `intent_id` 索引；新增 `src/store/postgresCoreIntentLink.ts` 与 `src/store/coreIntentLinkStore.ts`。
+- **测试与文档同步**：
+  - 新增文档 `docs/cross-space-intent-test-guide.zh.md`（分角色、分终端、主流程与验收模板）。
+  - 文档补充“三者打通”说明及查询 API。
+  - `README.zh.md` 与英文版结构对齐，并完成术语统一（Escrow/Mapping/Roadshow/Gateway Checkout 等）。
+- **质量验证**：执行 `npm run typecheck` 通过；相关新增/修改文件 `ReadLints` 无告警。
+
+【代码证据】
+- 映射与存储：`src/types.ts`、`src/store/memory.ts`、`src/store/coreIntentLinkStore.ts`、`src/store/postgresCoreIntentLink.ts`
+- 迁移：`src/db/migrate.ts`
+- 路由：`src/routes/intents.ts`
+- Relayer：`scripts/relay-core-to-espace.mjs`
+- 配置模板：`.env.conflux.testnet.example`
+- 文档：`docs/cross-space-intent-test-guide.zh.md`、`README.zh.md`
+
 ## 当日记录（2026-04-14）
 
 【今日完成】

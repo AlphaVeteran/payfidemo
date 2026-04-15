@@ -8,9 +8,11 @@
     "env:switch:local": "bash scripts/switch-env.sh local",
     "env:switch:hashkey": "bash scripts/switch-env.sh hashkey",
     "env:switch:base-sepolia": "bash scripts/switch-env.sh base-sepolia",
+    "env:switch:conflux-testnet": "bash scripts/switch-env.sh conflux-testnet",
     "dev:local": "npm run env:switch:local && npm run dev",
     "dev:hashkey": "npm run env:switch:hashkey && npm run dev",
     "dev:base-sepolia": "npm run env:switch:base-sepolia && npm run dev",
+    "dev:conflux-testnet": "npm run env:switch:conflux-testnet && npm run dev",
     "dev:frontend": "npm run dev --prefix frontend",
     "start": "tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
@@ -28,6 +30,7 @@
     "local-flow:run": "node scripts/local-flow.mjs run",
     "relayer:core-to-espace": "node scripts/relay-core-to-espace.mjs",
     "demo:cross-space": "node scripts/cross-space-demo.mjs",
+    "deploy:core-space:vault": "node scripts/deploy-core-order-vault-core-space.mjs",
     "db:migrate": "tsx src/db/migrate-cli.ts"
   },
   "engines": {
@@ -39,6 +42,7 @@
     "dotenv": "^16.4.5",
     "ecdsa-sig-formatter": "^1.0.11",
     "express": "^4.21.0",
+    "js-conflux-sdk": "^2.5.1",
     "pg": "^8.20.0",
     "uuid": "^10.0.0",
     "viem": "^2.21.44"

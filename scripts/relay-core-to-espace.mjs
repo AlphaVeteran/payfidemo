@@ -6,6 +6,7 @@ import {
   getAddress,
   http,
   parseAbi,
+  parseAbiItem,
   defineChain,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -17,6 +18,9 @@ const coreOrderVaultAbi = parseAbi([
 const adapterAbi = parseAbi([
   "function createEscrowFromCore(uint256 coreOrderId, address buyer, address seller, address asset, uint128 amountTotal, uint128 amountPerLesson, uint16 maxReleases, uint64 expiresAt, bytes32 agreementHash, address disputeModule) returns (uint256 escrowId)",
 ]);
+const coreOrderMappedEvent = parseAbiItem(
+  "event CoreOrderMapped(uint256 indexed coreOrderId, uint256 indexed escrowId)",
+);
 
 function env(name, fallback = "") {
   return String(process.env[name] ?? fallback).trim();
@@ -35,11 +39,26 @@ function parsePk(raw) {
   return raw.startsWith("0x") ? raw : `0x${raw}`;
 }
 
+async function notifyMapping({ apiBase, coreOrderId, escrowId, mappedTxHash }) {
+  if (!apiBase) return;
+  const url = `${apiBase.replace(/\/$/, "")}/api/payfi/v1/intents/core-links/mapped`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ coreOrderId, escrowId, mappedTxHash }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`mapping callback failed status=${res.status} body=${txt}`);
+  }
+}
+
 async function main() {
   const coreChainId = Number(env("CORE_CHAIN_ID", "71"));
   const eSpaceChainId = Number(env("ESPACE_CHAIN_ID", "71"));
   const pollMs = Number(env("RELAYER_POLL_MS", "7000"));
   const confirmations = BigInt(env("RELAYER_CONFIRMATIONS", "1"));
+  const apiBase = env("PAYFI_API_URL", "http://127.0.0.1:8787");
 
   const coreChain = defineChain({
     id: coreChainId,
@@ -144,7 +163,29 @@ async function main() {
           ],
         });
         console.log(`[relayer] mapped coreOrder=${orderId.toString()} tx=${txHash}`);
-        await eSpaceClient.waitForTransactionReceipt({ hash: txHash });
+        const receipt = await eSpaceClient.waitForTransactionReceipt({ hash: txHash });
+        let escrowId;
+        try {
+          const logs = await eSpaceClient.getLogs({
+            address: adapterAddress,
+            event: coreOrderMappedEvent,
+            fromBlock: receipt.blockNumber,
+            toBlock: receipt.blockNumber,
+            args: { coreOrderId: orderId },
+          });
+          escrowId = logs[0]?.args?.escrowId?.toString();
+        } catch {
+          // best effort: callback can still include just tx hash
+        }
+        if (escrowId) {
+          await notifyMapping({
+            apiBase,
+            coreOrderId: orderId.toString(),
+            escrowId,
+            mappedTxHash: txHash,
+          });
+          console.log(`[relayer] linked coreOrder=${orderId.toString()} escrowId=${escrowId}`);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[relayer] failed order=${orderId.toString()} err=${message}`);

@@ -4,6 +4,8 @@ dist/
 .env.base.sepolia
 .env.base.sepolia.private
 .env.hashkey.testnet
+.env.conflux.testnet
+.env.conflux.testnet.private
 .env.hashkey.private
 .env.local.anvil
 .env.*.bak

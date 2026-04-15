@@ -61,3 +61,12 @@ export interface CreateIntentBody {
   jurisdiction?: string;
   disputeResolver?: string;
 }
+
+export interface CoreIntentLinkRecord {
+  coreOrderId: string;
+  escrowId: string;
+  intentId?: string;
+  mappedTxHash?: string;
+  createdAt: string;
+  updatedAt: string;
+}

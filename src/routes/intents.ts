@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { withPgTransaction } from "../db/withTransaction.js";
 import { getPgPool, isPersistenceEnabled } from "../db/pool.js";
+import { coreIntentLinkStore } from "../store/coreIntentLinkStore.js";
 import { intentStore } from "../store/intentStore.js";
 import { pgSaveIntent } from "../store/postgresIntent.js";
 import { logSettlementEvent } from "../settlement/logSettlementEvent.js";
@@ -37,6 +38,15 @@ import {
 const router = Router();
 
 let demoEscrowCounter = 1;
+
+function normalizeNumericId(v: unknown): string | null {
+  if (typeof v === "bigint") return v.toString();
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v).toString();
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!/^\d+$/.test(s)) return null;
+  return s;
+}
 
 /** viem `readContract(escrows)` 返回元组；统一转成可 JSON 落库的纯字段。 */
 function escrowSnapshotFromEscrowsRead(raw: unknown): {
@@ -174,6 +184,68 @@ router.post("/", async (req, res) => {
 router.get("/", async (_req, res) => {
   const intents = await intentStore.listIntents();
   res.json({ intents: intents.map(sanitize) });
+});
+
+router.post("/core-links/mapped", async (req, res) => {
+  const coreOrderId = normalizeNumericId((req.body as { coreOrderId?: unknown })?.coreOrderId);
+  const escrowId = normalizeNumericId((req.body as { escrowId?: unknown })?.escrowId);
+  const mappedTxHashRaw = (req.body as { mappedTxHash?: string })?.mappedTxHash?.trim();
+  if (!coreOrderId || !escrowId) {
+    res.status(400).json({ error: "coreOrderId and escrowId are required numeric strings" });
+    return;
+  }
+  if (mappedTxHashRaw && !isHash(mappedTxHashRaw)) {
+    res.status(400).json({ error: "invalid mappedTxHash" });
+    return;
+  }
+  const link = await coreIntentLinkStore.upsert({
+    coreOrderId,
+    escrowId,
+    mappedTxHash: mappedTxHashRaw || undefined,
+  });
+  res.json({ ok: true, link });
+});
+
+router.get("/core-links/by-core-order/:coreOrderId", async (req, res) => {
+  const coreOrderId = normalizeNumericId(req.params.coreOrderId);
+  if (!coreOrderId) {
+    res.status(400).json({ error: "invalid coreOrderId" });
+    return;
+  }
+  const link = await coreIntentLinkStore.getByCoreOrderId(coreOrderId);
+  if (!link) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({ link });
+});
+
+router.get("/core-links/by-escrow/:escrowId", async (req, res) => {
+  const escrowId = normalizeNumericId(req.params.escrowId);
+  if (!escrowId) {
+    res.status(400).json({ error: "invalid escrowId" });
+    return;
+  }
+  const link = await coreIntentLinkStore.getByEscrowId(escrowId);
+  if (!link) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({ link });
+});
+
+router.get("/core-links/by-intent/:intentId", async (req, res) => {
+  const intentId = req.params.intentId.trim();
+  if (!intentId) {
+    res.status(400).json({ error: "invalid intentId" });
+    return;
+  }
+  const link = await coreIntentLinkStore.getByIntentId(intentId);
+  if (!link) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({ link });
 });
 
 /** 生成 createAndDeposit 的 calldata，便于 cast / 钱包发起 */
@@ -487,6 +559,16 @@ router.post("/:intentId/funding/tx", async (req, res) => {
         row.status = "active";
         row.expiresAt = parsed.expiresAt;
         await intentStore.saveIntent(row);
+        await coreIntentLinkStore
+          .getByEscrowId(parsed.escrowId)
+          .then(async (link) => {
+            if (!link) return;
+            await coreIntentLinkStore.upsert({
+              coreOrderId: link.coreOrderId,
+              escrowId: parsed.escrowId,
+              intentId: row.intentId,
+            });
+          });
 
         try {
           await settlementAdapter.emit("INTENT_FUNDED", {
@@ -528,6 +610,16 @@ router.post("/:intentId/funding/tx", async (req, res) => {
         row.expiresAt = Math.floor(Date.now() / 1000) + row.durationSeconds;
         row.status = "active";
         await intentStore.saveIntent(row);
+        await coreIntentLinkStore
+          .getByEscrowId(escrowId)
+          .then(async (link) => {
+            if (!link) return;
+            await coreIntentLinkStore.upsert({
+              coreOrderId: link.coreOrderId,
+              escrowId,
+              intentId: row.intentId,
+            });
+          });
         try {
           await settlementAdapter.emit("INTENT_FUNDED", {
             intentId: row.intentId,
@@ -575,6 +667,16 @@ router.post("/:intentId/funding/tx", async (req, res) => {
     row.escrowId = escrowId;
     row.status = "active";
     row.expiresAt = now + row.durationSeconds;
+    await coreIntentLinkStore
+      .getByEscrowId(escrowId)
+      .then(async (link) => {
+        if (!link) return;
+        await coreIntentLinkStore.upsert({
+          coreOrderId: link.coreOrderId,
+          escrowId,
+          intentId: row.intentId,
+        });
+      });
     const fundedPayload = {
       intentId: row.intentId,
       escrowId,

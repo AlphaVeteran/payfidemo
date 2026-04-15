@@ -11,6 +11,9 @@ ENV_HASHKEY_PRIVATE_FILE=".env.hashkey.private"
 ENV_BASE_SEPOLIA_FILE=".env.base.sepolia"
 ENV_BASE_SEPOLIA_TEMPLATE=".env.base.sepolia.example"
 ENV_BASE_SEPOLIA_PRIVATE_FILE=".env.base.sepolia.private"
+ENV_CONFLUX_TESTNET_FILE=".env.conflux.testnet"
+ENV_CONFLUX_TESTNET_TEMPLATE=".env.conflux.testnet.example"
+ENV_CONFLUX_TESTNET_PRIVATE_FILE=".env.conflux.testnet.private"
 
 usage() {
   cat <<'EOF'
@@ -18,6 +21,7 @@ Usage:
   bash scripts/switch-env.sh local
   bash scripts/switch-env.sh hashkey [--refresh]
   bash scripts/switch-env.sh base-sepolia [--refresh]
+  bash scripts/switch-env.sh conflux-testnet [--refresh]
 
 What it does:
   - Forces the repo root `.env` to become a symlink to the desired config file.
@@ -32,6 +36,11 @@ What it does:
       - If `.env.base.sepolia` does not exist yet, it copies `.env.base.sepolia.example` (Chain 84532 + Circle test USDC) into it; if missing, falls back to `.env.example`.
       - With `--refresh`, it re-copies from the same template (fallback `.env.example`).
       - If `.env.base.sepolia.private` exists, it overlays those key=value pairs into `.env.base.sepolia`
+        after copy, so secrets survive refresh.
+  - conflux-testnet:
+      - If `.env.conflux.testnet` does not exist yet, it copies `.env.conflux.testnet.example` (Core Space + eSpace testnet) into it; if missing, falls back to `.env.example`.
+      - With `--refresh`, it re-copies from the same template (fallback `.env.example`).
+      - If `.env.conflux.testnet.private` exists, it overlays those key=value pairs into `.env.conflux.testnet`
         after copy, so secrets survive refresh.
 EOF
 }
@@ -172,6 +181,37 @@ case "$mode" in
     overlay_env_file "$ENV_BASE_SEPOLIA_FILE" "$ENV_BASE_SEPOLIA_PRIVATE_FILE"
     echo "[switch-env] Switching to Base Sepolia env ($ENV_BASE_SEPOLIA_FILE)"
     force_link "$ENV_BASE_SEPOLIA_FILE"
+    ;;
+  conflux-testnet)
+    if [[ ! -e "$ENV_LOCAL_FILE" ]]; then
+      if [[ -e ".env" ]]; then
+        echo "[switch-env] Preserving current .env into $ENV_LOCAL_FILE"
+        cp -L ".env" "$ENV_LOCAL_FILE"
+      else
+        echo "[switch-env] WARNING: .env does not exist; cannot create $ENV_LOCAL_FILE backup" >&2
+      fi
+    fi
+
+    conflux_testnet_template_copy() {
+      if [[ -f "$ENV_CONFLUX_TESTNET_TEMPLATE" ]]; then
+        echo "[switch-env] Using template $ENV_CONFLUX_TESTNET_TEMPLATE -> $ENV_CONFLUX_TESTNET_FILE"
+        cp "$ENV_CONFLUX_TESTNET_TEMPLATE" "$ENV_CONFLUX_TESTNET_FILE"
+      else
+        echo "[switch-env] WARNING: $ENV_CONFLUX_TESTNET_TEMPLATE missing; fallback .env.example" >&2
+        cp ".env.example" "$ENV_CONFLUX_TESTNET_FILE"
+      fi
+    }
+    if [[ "$refresh" == "--refresh" ]]; then
+      conflux_testnet_template_copy
+    else
+      if [[ ! -e "$ENV_CONFLUX_TESTNET_FILE" ]]; then
+        echo "[switch-env] Creating $ENV_CONFLUX_TESTNET_FILE from Conflux testnet template"
+        conflux_testnet_template_copy
+      fi
+    fi
+    overlay_env_file "$ENV_CONFLUX_TESTNET_FILE" "$ENV_CONFLUX_TESTNET_PRIVATE_FILE"
+    echo "[switch-env] Switching to Conflux testnet env ($ENV_CONFLUX_TESTNET_FILE)"
+    force_link "$ENV_CONFLUX_TESTNET_FILE"
     ;;
   *)
     echo "[switch-env] ERROR: unknown mode: $mode" >&2
