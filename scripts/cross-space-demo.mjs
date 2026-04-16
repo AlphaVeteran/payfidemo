@@ -2,13 +2,12 @@
 import "dotenv/config";
 import {
   createPublicClient,
-  createWalletClient,
   defineChain,
   getAddress,
   http,
   parseAbi,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { Conflux } from "js-conflux-sdk";
 
 const erc20Abi = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
@@ -33,6 +32,23 @@ function envAny(names, fallback = "") {
     if (value) return value;
   }
   return fallback;
+}
+
+async function fetchCoreLinkByOrder(apiBase, orderId) {
+  if (!apiBase) return null;
+  const base = apiBase.replace(/\/$/, "");
+  const url = `${base}/api/payfi/v1/intents/core-links/by-core-order/${encodeURIComponent(orderId)}`;
+  try {
+    const res = await fetch(url);
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    const data = await res.json();
+    const link = data?.link;
+    if (!link || typeof link.escrowId !== "string") return null;
+    return link;
+  } catch {
+    return null;
+  }
 }
 
 function pk(name) {
@@ -63,24 +79,36 @@ async function main() {
     rpcUrls: { default: { http: [env("ESPACE_RPC_URL")] } },
   });
 
-  const buyer = privateKeyToAccount(pk("BUYER_PRIVATE_KEY"));
-  const coreClient = createPublicClient({ chain: coreChain, transport: http(coreChain.rpcUrls.default.http[0]) });
+  const coreRpcUrl = coreChain.rpcUrls.default.http[0];
+  const coreClient = new Conflux({ url: coreRpcUrl, networkId: coreChain.id });
+  const coreBuyer = coreClient.wallet.addPrivateKey(pk("BUYER_PRIVATE_KEY"));
   const eSpaceClient = createPublicClient({
     chain: eSpaceChain,
     transport: http(eSpaceChain.rpcUrls.default.http[0]),
   });
-  const buyerWallet = createWalletClient({
-    account: buyer,
-    chain: coreChain,
-    transport: http(coreChain.rpcUrls.default.http[0]),
-  });
 
-  const coreVaultAddress = getAddress(env("CORE_ORDER_VAULT_ADDRESS"));
-  const coreAssetAddress = getAddress(env("CORE_DEPOSIT_ASSET_ADDRESS"));
+  const coreVaultAddressRaw = envAny(["CORE_ORDER_VAULT_CFX_ADDRESS", "CORE_ORDER_VAULT_ADDRESS"]);
+  if (!coreVaultAddressRaw) {
+    throw new Error("CORE_ORDER_VAULT_CFX_ADDRESS or CORE_ORDER_VAULT_ADDRESS is required");
+  }
+  const coreVaultAddress =
+    coreVaultAddressRaw.startsWith("cfx") || coreVaultAddressRaw.startsWith("CFX")
+      ? coreVaultAddressRaw
+      : getAddress(coreVaultAddressRaw);
+  const coreAssetAddressRaw = env("CORE_DEPOSIT_ASSET_ADDRESS");
+  if (!coreAssetAddressRaw) {
+    throw new Error("CORE_DEPOSIT_ASSET_ADDRESS is required");
+  }
+  const coreAssetAddress =
+    coreAssetAddressRaw.startsWith("cfx") || coreAssetAddressRaw.startsWith("CFX")
+      ? coreAssetAddressRaw
+      : getAddress(coreAssetAddressRaw);
   const sellerAddress = getAddress(env("SELLER_ADDRESS"));
   const adapterAddress = getAddress(env("ESPACE_ADAPTER_ADDRESS"));
+  const apiBase = env("PAYFI_API_URL", "http://127.0.0.1:8787");
 
-  const orderId = BigInt(env("DEMO_ORDER_ID", Date.now().toString()));
+  const orderIdRaw = env("DEMO_ORDER_ID");
+  const orderId = BigInt(orderIdRaw || Date.now().toString());
   const amountTotal = BigInt(env("DEMO_AMOUNT_TOTAL", "1000000"));
   const amountPerLesson = BigInt(env("DEMO_AMOUNT_PER_LESSON", "100000"));
   const maxReleases = Number(env("DEMO_MAX_RELEASES", "10"));
@@ -91,29 +119,40 @@ async function main() {
   );
   const disputeModule = getAddress(env("DEMO_DISPUTE_MODULE", "0x0000000000000000000000000000000000000000"));
 
-  const allowance = await coreClient.readContract({
-    address: coreAssetAddress,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: [buyer.address, coreVaultAddress],
-  });
-  if (allowance < amountTotal) {
-    const approveHash = await buyerWallet.writeContract({
-      address: coreAssetAddress,
+  const allowance = await coreClient
+    .Contract({
+      address: coreAssetAddress.toLowerCase(),
       abi: erc20Abi,
-      functionName: "approve",
-      args: [coreVaultAddress, amountTotal],
-    });
-    await coreClient.waitForTransactionReceipt({ hash: approveHash });
-    console.log(`[demo] approved core vault tx=${approveHash}`);
+    })
+    .allowance(coreBuyer.address, coreVaultAddress)
+    .call();
+  const allowanceValue = BigInt(allowance.toString());
+  if (allowanceValue < amountTotal) {
+    const approveTx = await coreClient
+      .Contract({
+        address: coreAssetAddress.toLowerCase(),
+        abi: erc20Abi,
+      })
+      .approve(coreVaultAddress, amountTotal)
+      .sendTransaction({ from: coreBuyer.address });
+    let approveReceipt = null;
+    while (!approveReceipt) {
+      approveReceipt = await coreClient.cfx.getTransactionReceipt(approveTx);
+      if (!approveReceipt) await sleep(1500);
+    }
+    if (approveReceipt.outcomeStatus !== 0) {
+      throw new Error(`approve failed outcomeStatus=${approveReceipt.outcomeStatus}`);
+    }
+    console.log(`[demo] approved core vault tx=${approveTx}`);
   }
 
   const fromBlock = await eSpaceClient.getBlockNumber();
-  const placeHash = await buyerWallet.writeContract({
-    address: coreVaultAddress,
-    abi: coreVaultAbi,
-    functionName: "placeOrderDeposit",
-    args: [
+  const placeTx = await coreClient
+    .Contract({
+      address: coreVaultAddress.toLowerCase(),
+      abi: coreVaultAbi,
+    })
+    .placeOrderDeposit(
       orderId,
       sellerAddress,
       coreAssetAddress,
@@ -123,14 +162,22 @@ async function main() {
       durationSeconds,
       agreementHash,
       disputeModule,
-    ],
-  });
-  await coreClient.waitForTransactionReceipt({ hash: placeHash });
-  console.log(`[demo] core order placed orderId=${orderId.toString()} tx=${placeHash}`);
+    )
+    .sendTransaction({ from: coreBuyer.address });
+  let placeReceipt = null;
+  while (!placeReceipt) {
+    placeReceipt = await coreClient.cfx.getTransactionReceipt(placeTx);
+    if (!placeReceipt) await sleep(1500);
+  }
+  if (placeReceipt.outcomeStatus !== 0) {
+    throw new Error(`placeOrderDeposit failed outcomeStatus=${placeReceipt.outcomeStatus}`);
+  }
+  console.log(`[demo] core order placed orderId=${orderId.toString()} tx=${placeTx}`);
 
   const maxWaitMs = Number(env("DEMO_WAIT_MS", "120000"));
   const pollMs = Number(env("DEMO_POLL_MS", "5000"));
   const deadline = Date.now() + maxWaitMs;
+  let lastApiLinked = null;
 
   while (Date.now() < deadline) {
     const logs = await eSpaceClient.getLogs({
@@ -147,10 +194,35 @@ async function main() {
       );
       return;
     }
+    const linked = await fetchCoreLinkByOrder(apiBase, orderId.toString());
+    if (linked?.escrowId) {
+      lastApiLinked = linked;
+      console.log(
+        `[demo] mapped via API coreOrder=${orderId.toString()} escrowId=${linked.escrowId} tx=${linked.mappedTxHash ?? "unknown"}`,
+      );
+      return;
+    }
     await sleep(pollMs);
   }
 
-  throw new Error("timeout waiting CoreOrderMapped event; check relayer is running");
+  const linkedAfterTimeout = await fetchCoreLinkByOrder(apiBase, orderId.toString());
+  const finalLink = linkedAfterTimeout ?? lastApiLinked;
+  if (finalLink?.escrowId) {
+    console.log(
+      `[demo] mapped via API after timeout window coreOrder=${orderId.toString()} escrowId=${finalLink.escrowId} tx=${finalLink.mappedTxHash ?? "unknown"}`,
+    );
+    return;
+  }
+  throw new Error(
+    [
+      "timeout waiting CoreOrderMapped event",
+      `orderId=${orderId.toString()}`,
+      `waitMs=${maxWaitMs}`,
+      `pollMs=${pollMs}`,
+      `apiBase=${apiBase || "unset"}`,
+      "check relayer logs for scan epochs and mapped/linked lines",
+    ].join(" | "),
+  );
 }
 
 main().catch((err) => {

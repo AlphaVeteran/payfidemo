@@ -46,6 +46,44 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-16）
+
+【今日完成】
+- **Cross-Space 用户流程与步骤状态机修正**：用户页 `frontend/components/payfi-demo.tsx` 的向导跳转改为明确单向规则并沉淀为统一状态迁移入口（`applyWizardTransition`）：
+  - 新建意向成功后进入 **Step3（链上入金）**；
+  - 自动完成映射并入金成功后进入 **Step4（分期放款）**；
+  - 修复此前“自动完成映射并入金回跳新建意图”与“新建后停在原页”的反复问题。
+- **Cross-Space demo 可靠性增强**：
+  - `src/server.ts` 增加 `cross-space-demo` 任务子进程跟踪与取消接口：`POST /api/payfi/v1/debug/cross-space/demo/:taskId/cancel`，可主动清理 `already running` 卡住任务；
+  - `scripts/relay-core-to-espace.mjs` 增强 epoch 窗口错误自愈（重试、窗口重锚、自适应确认滞后）以降低 relayer 异常退出概率；
+  - `.env.conflux.testnet` 将 `RELAYER_CONFIRMATIONS` 提升至 `5` 提高公共 RPC 抖动场景稳定性。
+- **自动入金失败根因修复（fundingTxHash 显示为 —）**：
+  - 定位 `POST /intents/:intentId/funding/auto-demo` 中 payer 与 buyer 不一致导致 `createAndDeposit` 回滚；
+  - 后端改为使用 `BUYER_PRIVATE_KEY` 执行 auto-demo 入金，成功写回 `fundingTxHash`；
+  - 相关代码：`src/chain/config.ts`、`src/routes/intents.ts`。
+- **链上入金 UI 与信息展示优化**：
+  - `fundingTxHash` 后新增“查看交易”链接；
+  - “缴纳保证金”与“自动完成映射并入金（Demo）”按钮样式对齐“新建合同意向”主按钮；
+  - Core 卡片新增买家/卖家地址（Base32 + HEX 双显示），并移除“商家地址（Core Demo）”冗余行；
+  - eSpace 卡片文案改为“买家地址/卖家地址”。
+- **文档同步**：
+  - `docs/cross-space-poc-design.zh.md` 新增“7.4 前端步骤状态机（当前实现）”；
+  - `docs/cross-space-intent-test-guide.zh.md` 在“常见问题与处理”补充 `cross-space demo is already running` 的取消与重试流程。
+
+【代码证据】
+- 前端：`frontend/components/payfi-demo.tsx`、`frontend/app/globals.css`、`frontend/types/conflux-address-js-browser.d.ts`
+- 后端：`src/server.ts`、`src/chain/config.ts`、`src/routes/intents.ts`
+- 脚本/环境：`scripts/relay-core-to-espace.mjs`、`.env.conflux.testnet`
+- 文档：`docs/cross-space-poc-design.zh.md`、`docs/cross-space-intent-test-guide.zh.md`
+
+【明日任务（优先级）】
+1. **双 Profile 端到端回归（必须）**：使用两个独立 Chrome Profile（Buyer 与 Seller，钱包与会话严格隔离），按 `docs/cross-space-poc-design.zh.md` 第 7 节测试步骤完整走通：
+   - 7.1 Happy Path 全链路；
+   - 7.2 异常与安全至少 4 条；
+   - 7.3 演示彩排清单逐项核对。
+2. **测试证据留档**：沉淀每条用例的 `coreOrderId / escrowId / intentId / fundingTxHash` 与关键交易链接，补充到测试记录与 WORKLOG 当日条目。
+3. **回归问题清单收敛**：对仍可能出现的 relayer epoch-range 抖动进行二次观测，确认是否需要固定专有 Core RPC 节点以替代公共 RPC。
+
 ## 当日记录（2026-04-15）
 
 【今日完成】

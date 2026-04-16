@@ -33,8 +33,12 @@ import {
 import { createPortal } from "react-dom";
 import { useI18n } from "@/lib/i18n";
 import {
+  autoFundIntentDemo,
   createIntent,
   fundingHint,
+  getCrossSpaceDemoTask,
+  getCoreIntentLinkByEscrowId,
+  getCoreIntentLinkByIntentId,
   getIntent,
   getReleaseSignatures,
   listIntents,
@@ -42,7 +46,9 @@ import {
   refundIntent,
   releasePrepare,
   saveReleaseSignature,
+  triggerCrossSpaceDemo,
   releaseSubmit,
+  type CoreIntentLinkRecord,
   type IntentRecord,
   type ReleasePrepareResponse,
 } from "@/lib/payfi-api";
@@ -349,6 +355,45 @@ export default function PayFiDemo() {
       stepNeedIntentFirst: "请先新建或加载合同意向（intentId）。",
       stepNotFundedYet: "请先完成「链上入金」后再进行链上托管分期放款（双签）。",
       stepAlreadyFunded: "当前合同已不在「待支付」状态。若托管尚未完成，请查看上一步；否则请在本步继续分期放款或退款。",
+      coreOrderSectionTitle: "Core Space：下单与保证金",
+      espaceOrderSectionTitle: "eSpace：映射参数",
+      coreOrderSectionHint:
+        "当前卡片操作发生在 eSpace（创建 intent）。Core 下单/保证金映射状态按阶段回填到下方状态栏。",
+      coreStepCore: "Core 下单",
+      coreStepAdapter: "Adapter 映射",
+      coreStepEscrow: "escrowId",
+      coreOrderIdLabel: "Core orderId",
+      coreEscrowIdLabel: "eSpace escrowId",
+      coreMappedTxLabel: "Adapter 映射交易",
+      coreMappedTxView: "查看交易",
+      coreDemoMerchantLabel: "商家地址（Core Demo）",
+      coreDemoBuyerLabel: "买家地址（Core Demo）",
+      coreDemoSellerLabel: "卖家地址（Core Demo）",
+      coreDemoTotalLabel: "托管总额（Core Demo）",
+      coreDemoReleasesLabel: "分期期数（Core Demo）",
+      espaceUserLabel: "买家地址（eSpace）",
+      espaceMerchantLabel: "卖家地址（eSpace）",
+      espaceTotalLabel: "托管总额（eSpace）",
+      espaceReleasesLabel: "分期期数（eSpace）",
+      espaceCycleLabel: "托管周期（小时）",
+      createMappedIntentBtn: "生成映射intentId",
+      autoMapFundBtn: "自动完成映射并入金（Demo）",
+      autoMapFundBusy: "自动处理中…",
+      autoMapFundDone: "已完成映射并自动入金，已跳转到下一步。",
+      autoFlowSummaryTitle: "自动流程摘要",
+      autoFlowIntentId: "intentId",
+      autoFlowCoreOrderId: "coreOrderId",
+      autoFlowEscrowId: "escrowId",
+      autoFlowFundingTx: "fundingTxHash",
+      fundOpsCollapsedHint:
+        "Conflux + CrossSpace 测试默认收起手动链上入金操作。若需手动执行，可展开下方操作区。",
+      expandFundOpsBtn: "展开链上入金操作（手动）",
+      coreDepositBtn: "缴纳保证金",
+      coreDepositBusy: "处理中…",
+      coreDepositDone: "已触发 Core demo，下方状态会自动刷新。",
+      coreDepositNeedDebug: "后端未开启调试接口（请设置 PAYFIDEMO_DEBUG=true 并重启 API）。",
+      stepStatusPending: "待完成",
+      stepStatusDone: "已完成",
     },
     "zh-TW": {
       userWorkbench: "使用者工作台",
@@ -483,6 +528,45 @@ export default function PayFiDemo() {
       stepNeedIntentFirst: "請先新建或載入合同意向（intentId）。",
       stepNotFundedYet: "請先完成「鏈上入金」後再進行鏈上託管分期放款（雙簽）。",
       stepAlreadyFunded: "目前合同已不在「待支付」狀態。若託管尚未完成，請查看上一步；否則請在本步繼續分期放款或退款。",
+      coreOrderSectionTitle: "Core Space：下單與保證金",
+      espaceOrderSectionTitle: "eSpace：映射參數",
+      coreOrderSectionHint:
+        "目前此卡片操作發生在 eSpace（建立 intent）。Core 下單/保證金映射狀態會分階段回填到下方狀態列。",
+      coreStepCore: "Core 下單",
+      coreStepAdapter: "Adapter 映射",
+      coreStepEscrow: "escrowId",
+      coreOrderIdLabel: "Core orderId",
+      coreEscrowIdLabel: "eSpace escrowId",
+      coreMappedTxLabel: "Adapter 映射交易",
+      coreMappedTxView: "查看交易",
+      coreDemoMerchantLabel: "商家地址（Core Demo）",
+      coreDemoBuyerLabel: "買家地址（Core Demo）",
+      coreDemoSellerLabel: "賣家地址（Core Demo）",
+      coreDemoTotalLabel: "托管總額（Core Demo）",
+      coreDemoReleasesLabel: "分期期數（Core Demo）",
+      espaceUserLabel: "買家地址（eSpace）",
+      espaceMerchantLabel: "賣家地址（eSpace）",
+      espaceTotalLabel: "託管總額（eSpace）",
+      espaceReleasesLabel: "分期期數（eSpace）",
+      espaceCycleLabel: "託管週期（小時）",
+      createMappedIntentBtn: "產生映射 intentId",
+      autoMapFundBtn: "自動完成映射並入金（Demo）",
+      autoMapFundBusy: "自動處理中…",
+      autoMapFundDone: "已完成映射並自動入金，已跳轉到下一步。",
+      autoFlowSummaryTitle: "自動流程摘要",
+      autoFlowIntentId: "intentId",
+      autoFlowCoreOrderId: "coreOrderId",
+      autoFlowEscrowId: "escrowId",
+      autoFlowFundingTx: "fundingTxHash",
+      fundOpsCollapsedHint:
+        "Conflux + CrossSpace 測試預設收起手動鏈上入金操作。若需手動執行，可展開下方操作區。",
+      expandFundOpsBtn: "展開鏈上入金操作（手動）",
+      coreDepositBtn: "繳納保證金",
+      coreDepositBusy: "處理中…",
+      coreDepositDone: "已觸發 Core demo，下方狀態會自動更新。",
+      coreDepositNeedDebug: "後端未開啟除錯接口（請設定 PAYFIDEMO_DEBUG=true 並重啟 API）。",
+      stepStatusPending: "待完成",
+      stepStatusDone: "已完成",
     },
     en: {
       userWorkbench: "User Console",
@@ -620,6 +704,45 @@ export default function PayFiDemo() {
         "Complete on-chain funding first, then proceed with on-chain escrow installment disbursement (dual-sign).",
       stepAlreadyFunded:
         "This intent is no longer awaiting funding. Use the previous step if you still need to fund; otherwise continue with installment disbursement or refund here.",
+      coreOrderSectionTitle: "Core Space: order & deposit",
+      espaceOrderSectionTitle: "eSpace: mapping parameters",
+      coreOrderSectionHint:
+        "Actions in this card currently run on eSpace (intent creation). Core order/deposit mapping is filled into the status bar in stages.",
+      coreStepCore: "Core order",
+      coreStepAdapter: "Adapter mapping",
+      coreStepEscrow: "escrowId",
+      coreOrderIdLabel: "Core orderId",
+      coreEscrowIdLabel: "eSpace escrowId",
+      coreMappedTxLabel: "Adapter mapping tx",
+      coreMappedTxView: "View tx",
+      coreDemoMerchantLabel: "Merchant (Core demo)",
+      coreDemoBuyerLabel: "Buyer (Core demo)",
+      coreDemoSellerLabel: "Seller (Core demo)",
+      coreDemoTotalLabel: "Total escrow (Core demo)",
+      coreDemoReleasesLabel: "Release count (Core demo)",
+      espaceUserLabel: "Buyer (eSpace)",
+      espaceMerchantLabel: "Seller (eSpace)",
+      espaceTotalLabel: "Total escrow (eSpace)",
+      espaceReleasesLabel: "Release count (eSpace)",
+      espaceCycleLabel: "Escrow cycle (hours)",
+      createMappedIntentBtn: "Generate mapped intentId",
+      autoMapFundBtn: "Auto map + fund (Demo)",
+      autoMapFundBusy: "Auto processing…",
+      autoMapFundDone: "Mapping and auto-funding completed. Moved to next step.",
+      autoFlowSummaryTitle: "Auto flow summary",
+      autoFlowIntentId: "intentId",
+      autoFlowCoreOrderId: "coreOrderId",
+      autoFlowEscrowId: "escrowId",
+      autoFlowFundingTx: "fundingTxHash",
+      fundOpsCollapsedHint:
+        "In Conflux + CrossSpace tests, manual on-chain funding is collapsed by default. Expand if you need manual operations.",
+      expandFundOpsBtn: "Expand on-chain funding actions (manual)",
+      coreDepositBtn: "Deposit margin",
+      coreDepositBusy: "Processing…",
+      coreDepositDone: "Core demo triggered. Status below will refresh automatically.",
+      coreDepositNeedDebug: "Debug endpoint is disabled (set PAYFIDEMO_DEBUG=true and restart API).",
+      stepStatusPending: "Pending",
+      stepStatusDone: "Done",
     },
   }[locale];
   const { address, isConnected, connector } = useAccount();
@@ -650,6 +773,10 @@ export default function PayFiDemo() {
     ...defaultCreateBodyStatic,
     asset: defaultDemoAssetAddress(targetChainId),
   };
+  const crossSpaceEnabled =
+    process.env.NEXT_PUBLIC_CROSS_SPACE_ENABLED?.trim().toLowerCase() === "true";
+  const isConfluxCrossSpace = crossSpaceEnabled && targetChainId === 71;
+  const coreSpaceNetId = Number(process.env.NEXT_PUBLIC_CORESPACE_CHAIN_ID ?? 1);
 
   const [intentId, setIntentId] = useState("");
   const [intent, setIntent] = useState<IntentRecord | null>(null);
@@ -677,6 +804,42 @@ export default function PayFiDemo() {
   const [createMerchantAddress, setCreateMerchantAddress] = useState(
     defaultDemoMerchantAddress,
   );
+  const [coreIntentLink, setCoreIntentLink] = useState<CoreIntentLinkRecord | null>(null);
+  const [coreDemoBusy, setCoreDemoBusy] = useState(false);
+  const [coreDemoMsg, setCoreDemoMsg] = useState<string | null>(null);
+  const [coreDemoErr, setCoreDemoErr] = useState<string | null>(null);
+  const [autoMapFundBusy, setAutoMapFundBusy] = useState(false);
+  const [fundingOpsOpen, setFundingOpsOpen] = useState(!isConfluxCrossSpace);
+  const [autoFlowFundingTxHash, setAutoFlowFundingTxHash] = useState<string | null>(null);
+
+  /**
+   * Wizard state machine (single-direction rules):
+   * - `create_to_fund`  : move to step 3 after creating intent
+   * - `auto_flow_done`  : move forward to step 4 after auto map+fund succeeds
+   * - `sync_from_intent`: default intent-status driven step sync
+   */
+  const applyWizardTransition = useCallback(
+    (
+      event: "create_to_fund" | "auto_flow_done" | "sync_from_intent",
+      payload?: { currentStep?: number; derivedStep?: number },
+    ) => {
+      if (event === "create_to_fund") {
+        setWizardStep(3);
+        return;
+      }
+      if (event === "auto_flow_done") {
+        setWizardStep(4);
+        return;
+      }
+      setWizardStep((prev) => {
+        const current = payload?.currentStep ?? prev;
+        const nextDerived = payload?.derivedStep ?? prev;
+        if (current === 1) return current;
+        return nextDerived;
+      });
+    },
+    [],
+  );
 
   const [userWbIntents, setUserWbIntents] = useState<IntentRecord[]>([]);
   const [userWbIntentsLoading, setUserWbIntentsLoading] = useState(false);
@@ -691,6 +854,7 @@ export default function PayFiDemo() {
       setIntent(null);
       setUserSig(null);
       setMerchantSig(null);
+      setCoreIntentLink(null);
       return;
     }
     setError(null);
@@ -700,6 +864,16 @@ export default function PayFiDemo() {
       setIntent(row);
       setUserSig(sigs.userSig);
       setMerchantSig(sigs.merchantSig);
+      if (crossSpaceEnabled) {
+        const link = row.escrowId
+          ? await getCoreIntentLinkByEscrowId(row.escrowId).catch(() => null)
+          : await getCoreIntentLinkByIntentId(id).catch(() => null);
+        if (link) {
+          setCoreIntentLink(link);
+        }
+      } else {
+        setCoreIntentLink(null);
+      }
       if (typeof window !== "undefined" && id) {
         try {
           const raw = window.localStorage.getItem(releaseStoreKey(id));
@@ -713,11 +887,33 @@ export default function PayFiDemo() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [intentId]);
+  }, [crossSpaceEnabled, intentId]);
 
   useEffect(() => {
     void refreshIntent();
   }, [refreshIntent]);
+
+  useEffect(() => {
+    if (!crossSpaceEnabled) return;
+    const id = intentId.trim();
+    if (!id) return;
+    const timer = window.setInterval(() => {
+      void getIntent(id)
+        .then(async (row) => {
+          setIntent(row);
+          const link = row.escrowId
+            ? await getCoreIntentLinkByEscrowId(row.escrowId).catch(() => null)
+            : await getCoreIntentLinkByIntentId(id).catch(() => null);
+          if (link) {
+            setCoreIntentLink(link);
+          }
+        })
+        .catch(() => {
+          // ignore transient polling errors
+        });
+    }, 8_000);
+    return () => window.clearInterval(timer);
+  }, [crossSpaceEnabled, intentId]);
 
   useEffect(() => {
     const fromQuery = searchParams.get("intentId")?.trim();
@@ -821,6 +1017,113 @@ export default function PayFiDemo() {
     }
   }, []);
 
+  const waitCrossSpaceDemoResult = useCallback(async (taskId: string) => {
+    const start = Date.now();
+    while (Date.now() - start < 190_000) {
+      const snap = await getCrossSpaceDemoTask(taskId);
+      if (snap.status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
+      if (snap.status === "failed") {
+        throw new Error(snap.error || "cross-space demo failed");
+      }
+      return snap;
+    }
+    throw new Error("cross-space demo status polling timed out");
+  }, []);
+
+  const onRunCoreDemo = useCallback(async () => {
+    setCoreDemoMsg(null);
+    setCoreDemoErr(null);
+    setCoreDemoBusy(true);
+    try {
+      const started = await triggerCrossSpaceDemo();
+      const done = await waitCrossSpaceDemoResult(started.taskId);
+      const logs = `${done.stdout ?? ""}\n${done.stderr ?? ""}`;
+      const orderIdMatch = logs.match(/core order placed orderId=(\d+)/i);
+      const mappedMatch = logs.match(/mapped to escrowId=(\d+)\s+tx=(0x[a-fA-F0-9]{64})/i);
+      if (orderIdMatch?.[1] || mappedMatch?.[1]) {
+        const now = new Date().toISOString();
+        setCoreIntentLink((prev) => ({
+          coreOrderId: orderIdMatch?.[1] ?? prev?.coreOrderId ?? "—",
+          escrowId: mappedMatch?.[1] ?? prev?.escrowId ?? "—",
+          mappedTxHash: mappedMatch?.[2] ?? prev?.mappedTxHash,
+          intentId: prev?.intentId,
+          createdAt: prev?.createdAt ?? now,
+          updatedAt: now,
+        }));
+      }
+      setCoreDemoMsg(text.coreDepositDone);
+      if (intentId.trim()) {
+        await refreshIntent();
+      }
+      void reloadUserWorkbenchIntents();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/not found/i.test(msg)) {
+        setCoreDemoErr(text.coreDepositNeedDebug);
+      } else {
+        setCoreDemoErr(msg);
+      }
+    } finally {
+      setCoreDemoBusy(false);
+    }
+  }, [
+    intentId,
+    refreshIntent,
+    reloadUserWorkbenchIntents,
+    waitCrossSpaceDemoResult,
+    text.coreDepositDone,
+    text.coreDepositNeedDebug,
+  ]);
+
+  const onAutoMapAndFundDemo = async () => {
+    setError(null);
+    setCoreDemoMsg(null);
+    setCoreDemoErr(null);
+    setAutoFlowFundingTxHash(null);
+    setAutoMapFundBusy(true);
+    try {
+      const started = await triggerCrossSpaceDemo();
+      const done = await waitCrossSpaceDemoResult(started.taskId);
+      const logs = `${done.stdout ?? ""}\n${done.stderr ?? ""}`;
+      const orderIdMatch = logs.match(/core order placed orderId=(\d+)/i);
+      const mappedMatch = logs.match(/mapped to escrowId=(\d+)\s+tx=(0x[a-fA-F0-9]{64})/i);
+      if (orderIdMatch?.[1] || mappedMatch?.[1]) {
+        const now = new Date().toISOString();
+        setCoreIntentLink((prev) => ({
+          coreOrderId: orderIdMatch?.[1] ?? prev?.coreOrderId ?? "—",
+          escrowId: mappedMatch?.[1] ?? prev?.escrowId ?? "—",
+          mappedTxHash: mappedMatch?.[2] ?? prev?.mappedTxHash,
+          intentId: prev?.intentId,
+          createdAt: prev?.createdAt ?? now,
+          updatedAt: now,
+        }));
+      }
+      const id = await onCreate();
+      if (!id) throw new Error("create intent failed");
+      const funded = await autoFundIntentDemo(id);
+      setAutoFlowFundingTxHash(funded.fundingTxHash ?? null);
+      setCoreDemoMsg(text.autoMapFundDone);
+      const row = await getIntent(id);
+      setIntent(row);
+      setIntentId(id);
+      // Single-direction rule: after auto map+fund succeeds, always continue to release step.
+      applyWizardTransition("auto_flow_done");
+      void reloadUserWorkbenchIntents();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/not found/i.test(msg)) {
+        setCoreDemoErr(text.coreDepositNeedDebug);
+      } else {
+        setCoreDemoErr(msg);
+      }
+    } finally {
+      setAutoMapFundBusy(false);
+    }
+  };
+
   const filteredUserWbIntents = useMemo(() => {
     return userWbIntents.filter((i) => {
       const byStatus = userWbStatusFilter === "all" || i.status === userWbStatusFilter;
@@ -908,7 +1211,7 @@ export default function PayFiDemo() {
   );
 
 
-  const onCreate = async () => {
+  const onCreate = async (): Promise<string | null> => {
     setError(null);
     setRefundResult(null);
     setBusy("create");
@@ -959,6 +1262,43 @@ export default function PayFiDemo() {
           maxReleases: maxRel,
           durationSeconds,
         };
+      } else if (isConfluxCrossSpace) {
+        if (!effectiveAddress) {
+          throw new Error(
+            text.publicTestnetConnectFirst.replace(
+              "{chain}",
+              chainDisplayName(targetChainId, locale),
+            ),
+          );
+        }
+        const maxRel = Number.parseInt(eSpaceReleasesDisplay, 10);
+        if (!Number.isInteger(maxRel) || maxRel < 1) {
+          throw new Error(text.releaseCountInvalid);
+        }
+        const durationSeconds = parseCycleHoursToDurationSeconds(eSpaceCycleDisplay);
+        const dec = demoUsdcDecimals(targetChainId);
+        const { amountTotal, amountPerLesson } = publicTestnetUsdcToIntentAmounts(
+          eSpaceTotalDisplay,
+          maxRel,
+          dec,
+        );
+        let merchantResolved: `0x${string}`;
+        try {
+          merchantResolved = getAddress(eSpaceMerchantDisplay as `0x${string}`);
+        } catch {
+          throw new Error(text.invalidMerchantAddress);
+        }
+        const userResolved = getAddress(effectiveAddress as `0x${string}`);
+        body = {
+          ...body,
+          asset: getAddress(defaultDemoAssetAddress(targetChainId)),
+          user: userResolved,
+          merchant: merchantResolved,
+          amountTotal,
+          amountPerLesson,
+          maxReleases: maxRel,
+          durationSeconds,
+        };
       }
       const { intentId: id } = await createIntent(body);
       setIntentId(id);
@@ -969,8 +1309,17 @@ export default function PayFiDemo() {
       setReleaseHint(null);
       const row = await getIntent(id);
       setIntent(row);
+      if (crossSpaceEnabled) {
+        const link = row.escrowId
+          ? await getCoreIntentLinkByEscrowId(row.escrowId).catch(() => null)
+          : await getCoreIntentLinkByIntentId(id).catch(() => null);
+        if (link) setCoreIntentLink(link);
+      }
+      applyWizardTransition("create_to_fund");
+      return id;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return null;
     } finally {
       setBusy(null);
     }
@@ -1255,8 +1604,13 @@ export default function PayFiDemo() {
   }, [wizardStep]);
 
   useEffect(() => {
-    setWizardStep((s) => (s === 1 ? s : derivedWizardStep));
-  }, [derivedWizardStep]);
+    if (wizardStep !== 3) return;
+    setFundingOpsOpen(!isConfluxCrossSpace);
+  }, [isConfluxCrossSpace, wizardStep]);
+
+  useEffect(() => {
+    applyWizardTransition("sync_from_intent", { derivedStep: derivedWizardStep });
+  }, [applyWizardTransition, derivedWizardStep]);
 
   useEffect(() => {
     if (!intentListSelectNavigate) return;
@@ -1306,12 +1660,151 @@ export default function PayFiDemo() {
     } catch {
       return intent.amountTotal;
     }
-  }, [intent?.amountTotal, targetChainId]);
+  }, [intent?.amountTotal]);
 
   const lastTxExplorerUrl =
     lastTx && /^0x[a-fA-F0-9]+$/.test(lastTx)
       ? blockExplorerTxUrl(targetChainId, lastTx)
       : null;
+
+  const autoFlowFundingTxExplorerUrl =
+    autoFlowFundingTxHash && /^0x[a-fA-F0-9]+$/.test(autoFlowFundingTxHash)
+      ? blockExplorerTxUrl(targetChainId, autoFlowFundingTxHash)
+      : null;
+
+  const createLockedTotalUsdc = useMemo(() => {
+    if (isConfluxCrossSpace) {
+      const configured =
+        process.env.NEXT_PUBLIC_DEMO_AMOUNT_TOTAL?.trim() ||
+        process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim();
+      return configured && configured.length > 0 ? configured : sepoliaTotalUsdc;
+    }
+    if (intent?.amountTotal?.trim()) {
+      try {
+        return formatUnits(BigInt(intent.amountTotal), demoUsdcDecimals(targetChainId));
+      } catch {
+        return intent.amountTotal;
+      }
+    }
+    return sepoliaTotalUsdc;
+  }, [intent?.amountTotal, isConfluxCrossSpace, sepoliaTotalUsdc]);
+  const createLockedMaxReleases = useMemo(() => {
+    if (isConfluxCrossSpace) {
+      const configured = process.env.NEXT_PUBLIC_DEMO_MAX_RELEASES?.trim() ||
+        process.env.NEXT_PUBLIC_DEFAULT_MAX_RELEASES?.trim();
+      return configured && configured.length > 0 ? configured : sepoliaMaxReleases;
+    }
+    return intent?.maxReleases ? String(intent.maxReleases) : sepoliaMaxReleases;
+  }, [intent?.maxReleases, isConfluxCrossSpace, sepoliaMaxReleases]);
+  const createLockedCycleHours = useMemo(() => {
+    if (isConfluxCrossSpace) {
+      const configured = process.env.NEXT_PUBLIC_DEMO_CYCLE_HOURS?.trim() ||
+        process.env.NEXT_PUBLIC_DEFAULT_CYCLE_HOURS?.trim();
+      return configured && configured.length > 0 ? configured : sepoliaCycleHours;
+    }
+    if (intent?.durationSeconds && Number.isFinite(intent.durationSeconds)) {
+      return String(intent.durationSeconds / 3600);
+    }
+    return sepoliaCycleHours;
+  }, [intent?.durationSeconds, isConfluxCrossSpace, sepoliaCycleHours]);
+
+  const coreOrderIdDisplay = coreIntentLink?.coreOrderId ?? "—";
+  const coreEscrowIdDisplay = intent?.escrowId ?? coreIntentLink?.escrowId ?? "—";
+  const coreBuyerHexDisplay = intent?.user || effectiveAddress || defaultCreateBodyStatic.user || "—";
+  const coreSellerHexDisplay =
+    intent?.merchant || process.env.NEXT_PUBLIC_DEMO_MERCHANT?.trim() || createMerchantAddress || "—";
+  const [coreBuyerCfxBase32Display, setCoreBuyerCfxBase32Display] = useState("—");
+  const [coreSellerCfxBase32Display, setCoreSellerCfxBase32Display] = useState("—");
+  useEffect(() => {
+    const hex = coreBuyerHexDisplay;
+    if (hex === "—" || !/^0x[a-fA-F0-9]{40}$/.test(hex)) {
+      setCoreBuyerCfxBase32Display("—");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import("@conflux-dev/conflux-address-js/lib/browser.js");
+        type EncodeFn = (hexAddress: string, netId: number) => string;
+        type ModuleShape = { default?: { encode?: EncodeFn }; encode?: EncodeFn };
+        const shaped = mod as unknown as ModuleShape;
+        const encode: EncodeFn | undefined = shaped.default?.encode ?? shaped.encode;
+        if (!encode) throw new Error("missing encode");
+        const base32 = encode(hex, coreSpaceNetId);
+        if (!cancelled) setCoreBuyerCfxBase32Display(base32);
+      } catch {
+        if (!cancelled) setCoreBuyerCfxBase32Display("—");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [coreBuyerHexDisplay, coreSpaceNetId]);
+  useEffect(() => {
+    const hex = coreSellerHexDisplay;
+    if (hex === "—" || !/^0x[a-fA-F0-9]{40}$/.test(hex)) {
+      setCoreSellerCfxBase32Display("—");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import("@conflux-dev/conflux-address-js/lib/browser.js");
+        type EncodeFn = (hexAddress: string, netId: number) => string;
+        type ModuleShape = { default?: { encode?: EncodeFn }; encode?: EncodeFn };
+        const shaped = mod as unknown as ModuleShape;
+        const encode: EncodeFn | undefined = shaped.default?.encode ?? shaped.encode;
+        if (!encode) throw new Error("missing encode");
+        const base32 = encode(hex, coreSpaceNetId);
+        if (!cancelled) setCoreSellerCfxBase32Display(base32);
+      } catch {
+        if (!cancelled) setCoreSellerCfxBase32Display("—");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [coreSellerHexDisplay, coreSpaceNetId]);
+  const coreDemoTotalDisplay =
+    process.env.NEXT_PUBLIC_DEMO_AMOUNT_TOTAL?.trim() ||
+    process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim() ||
+    createLockedTotalUsdc ||
+    "—";
+  const coreDemoReleasesDisplay =
+    process.env.NEXT_PUBLIC_DEMO_MAX_RELEASES?.trim() ||
+    process.env.NEXT_PUBLIC_DEFAULT_MAX_RELEASES?.trim() ||
+    createLockedMaxReleases ||
+    "—";
+  const eSpaceUserDisplay = isConfluxCrossSpace
+    ? intent?.user || defaultCreateBodyStatic.user || "—"
+    : effectiveAddress || intent?.user || defaultCreateBodyStatic.user || "—";
+  const eSpaceMerchantDisplay =
+    process.env.NEXT_PUBLIC_DEMO_MERCHANT?.trim() || intent?.merchant || createMerchantAddress || "—";
+  const eSpaceTotalDisplay =
+    process.env.NEXT_PUBLIC_DEMO_AMOUNT_TOTAL?.trim() ||
+    process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim() ||
+    createLockedTotalUsdc ||
+    "—";
+  const eSpaceReleasesDisplay =
+    process.env.NEXT_PUBLIC_DEMO_MAX_RELEASES?.trim() ||
+    process.env.NEXT_PUBLIC_DEFAULT_MAX_RELEASES?.trim() ||
+    createLockedMaxReleases ||
+    "—";
+  const eSpaceCycleDisplay =
+    process.env.NEXT_PUBLIC_DEMO_CYCLE_HOURS?.trim() ||
+    process.env.NEXT_PUBLIC_DEFAULT_CYCLE_HOURS?.trim() ||
+    createLockedCycleHours ||
+    "—";
+  const coreMappedTxHash = coreIntentLink?.mappedTxHash ?? null;
+  const coreMappedTxExplorerUrl =
+    coreMappedTxHash && /^0x[a-fA-F0-9]{64}$/.test(coreMappedTxHash)
+      ? blockExplorerTxUrl(targetChainId, coreMappedTxHash)
+      : null;
+  const coreFlowSteps = [
+    { key: "core", label: text.coreStepCore, done: Boolean(coreIntentLink?.coreOrderId) },
+    { key: "adapter", label: text.coreStepAdapter, done: Boolean(coreIntentLink?.escrowId) },
+    { key: "escrow", label: text.coreStepEscrow, done: coreEscrowIdDisplay !== "—" },
+  ];
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-[28rem] flex-col gap-6 px-4 pb-12 pt-6 sm:max-w-3xl sm:px-6">
@@ -1570,7 +2063,7 @@ export default function PayFiDemo() {
       {wizardStep === 2 && (
         <section className="payfi-card space-y-4 p-5">
           <h2 className="text-base font-semibold text-zinc-100">{text.createContractIntent}</h2>
-          {isPublicUsdcTestnet(targetChainId) && (
+          {(isPublicUsdcTestnet(targetChainId) || crossSpaceEnabled) && (
             <>
               <Field label={text.merchantAddressLabel}>
                 <input
@@ -1611,9 +2104,10 @@ export default function PayFiDemo() {
                     type="text"
                     inputMode="decimal"
                     autoComplete="off"
-                    value={sepoliaTotalUsdc}
+                    value={crossSpaceEnabled ? createLockedTotalUsdc : sepoliaTotalUsdc}
                     onChange={(e) => setSepoliaTotalUsdc(e.target.value)}
                     placeholder={text.totalEscrowPlaceholder}
+                    disabled={crossSpaceEnabled}
                   />
                 </Field>
                 <Field label={text.releaseCountLabel}>
@@ -1622,10 +2116,11 @@ export default function PayFiDemo() {
                     type="text"
                     inputMode="numeric"
                     autoComplete="off"
-                    value={sepoliaMaxReleases}
+                    value={crossSpaceEnabled ? createLockedMaxReleases : sepoliaMaxReleases}
                     onChange={(e) =>
                       setSepoliaMaxReleases(e.target.value.replace(/\D/g, "") || "1")
                     }
+                    disabled={crossSpaceEnabled}
                   />
                 </Field>
                 <Field label={text.cycleHoursLabel}>
@@ -1634,9 +2129,10 @@ export default function PayFiDemo() {
                     type="text"
                     inputMode="decimal"
                     autoComplete="off"
-                    value={sepoliaCycleHours}
+                    value={crossSpaceEnabled ? createLockedCycleHours : sepoliaCycleHours}
                     onChange={(e) => setSepoliaCycleHours(e.target.value)}
                     placeholder={text.cycleHoursPlaceholder}
+                    disabled={crossSpaceEnabled}
                   />
                 </Field>
               </div>
@@ -1656,6 +2152,159 @@ export default function PayFiDemo() {
       {wizardStep === 3 && (
         <section className="payfi-card space-y-4 p-5">
           <h2 className="text-base font-semibold text-zinc-100">{text.stepFund}</h2>
+          {crossSpaceEnabled && (
+            <div className="rounded-xl border border-sky-900/40 bg-sky-950/20 p-3">
+              <p className="text-xs font-semibold text-zinc-200">{text.coreOrderSectionTitle}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-zinc-400">{text.coreOrderSectionHint}</p>
+              <button
+                type="button"
+                onClick={() => void onRunCoreDemo()}
+                disabled={coreDemoBusy}
+                className="payfi-btn-primary mt-2 text-xs w-full sm:w-auto"
+              >
+                {coreDemoBusy ? text.coreDepositBusy : text.coreDepositBtn}
+              </button>
+              {coreDemoMsg ? <p className="mt-1 text-[11px] text-emerald-400/95">{coreDemoMsg}</p> : null}
+              {coreDemoErr ? <p className="mt-1 text-[11px] text-amber-300/95">{coreDemoErr}</p> : null}
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {coreFlowSteps.map((step) => (
+                  <div
+                    key={step.key}
+                    className={`rounded-md border px-2 py-2 text-center ${
+                      step.done
+                        ? "border-emerald-700/45 bg-emerald-950/25"
+                        : "border-zinc-700/60 bg-zinc-900/50"
+                    }`}
+                  >
+                    <p className="text-[11px] font-medium text-zinc-200">{step.label}</p>
+                    <p className="mt-0.5 text-[10px] text-zinc-500">
+                      {step.done ? text.stepStatusDone : text.stepStatusPending}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 space-y-1 text-[11px]">
+                <p className="text-zinc-300">
+                  <span className="payfi-label">{text.coreDemoBuyerLabel}:</span>{" "}
+                  <span className="font-mono">{coreBuyerCfxBase32Display}</span>{" "}
+                  <span className="text-zinc-500">(</span>
+                  <span className="font-mono text-zinc-500">{coreBuyerHexDisplay}</span>
+                  <span className="text-zinc-500">)</span>
+                </p>
+                <p className="text-zinc-300">
+                  <span className="payfi-label">{text.coreDemoSellerLabel}:</span>{" "}
+                  <span className="font-mono">{coreSellerCfxBase32Display}</span>{" "}
+                  <span className="text-zinc-500">(</span>
+                  <span className="font-mono text-zinc-500">{coreSellerHexDisplay}</span>
+                  <span className="text-zinc-500">)</span>
+                </p>
+                <p className="text-zinc-300">
+                  <span className="payfi-label">{text.coreDemoTotalLabel}:</span>{" "}
+                  <span className="font-mono">{coreDemoTotalDisplay}</span>
+                </p>
+                <p className="text-zinc-300">
+                  <span className="payfi-label">{text.coreDemoReleasesLabel}:</span>{" "}
+                  <span className="font-mono">{coreDemoReleasesDisplay}</span>
+                </p>
+                <p className="text-zinc-300">
+                  <span className="payfi-label">{text.coreOrderIdLabel}:</span>{" "}
+                  <span className="font-mono">{coreOrderIdDisplay}</span>
+                </p>
+                <p className="text-zinc-300">
+                  <span className="payfi-label">{text.coreEscrowIdLabel}:</span>{" "}
+                  <span className="font-mono">{coreEscrowIdDisplay}</span>
+                </p>
+                <p className="text-zinc-300">
+                  <span className="payfi-label">{text.coreMappedTxLabel}:</span>{" "}
+                  <span className="font-mono">{coreMappedTxHash ?? "—"}</span>
+                  {coreMappedTxExplorerUrl ? (
+                    <>
+                      {" "}
+                      <a
+                        href={coreMappedTxExplorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sky-400 underline-offset-2 hover:underline"
+                      >
+                        {text.coreMappedTxView}
+                      </a>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+          )}
+          {crossSpaceEnabled && (
+            <div className="rounded-xl border border-violet-900/35 bg-violet-950/20 p-3">
+              <p className="text-xs font-semibold text-zinc-200">{text.espaceOrderSectionTitle}</p>
+              <div className="mt-2 space-y-1 text-[11px] text-zinc-300">
+                <p>
+                  <span className="payfi-label">{text.espaceUserLabel}:</span>{" "}
+                  <span className="font-mono">{eSpaceUserDisplay}</span>
+                </p>
+                <p>
+                  <span className="payfi-label">{text.espaceMerchantLabel}:</span>{" "}
+                  <span className="font-mono">{eSpaceMerchantDisplay}</span>
+                </p>
+                <p>
+                  <span className="payfi-label">{text.espaceTotalLabel}:</span>{" "}
+                  <span className="font-mono">{eSpaceTotalDisplay}</span>
+                </p>
+                <p>
+                  <span className="payfi-label">{text.espaceReleasesLabel}:</span>{" "}
+                  <span className="font-mono">{eSpaceReleasesDisplay}</span>
+                </p>
+                <p>
+                  <span className="payfi-label">{text.espaceCycleLabel}:</span>{" "}
+                  <span className="font-mono">{eSpaceCycleDisplay}</span>
+                </p>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {isConfluxCrossSpace && (
+                  <button
+                    type="button"
+                    disabled={Boolean(busy) || autoMapFundBusy || coreDemoBusy}
+                    onClick={() => void onAutoMapAndFundDemo()}
+                    className="payfi-btn-primary w-full sm:w-auto"
+                  >
+                    {autoMapFundBusy ? text.autoMapFundBusy : text.autoMapFundBtn}
+                  </button>
+                )}
+              </div>
+              <div className="mt-3 rounded-md border border-white/10 bg-black/20 px-2.5 py-2 text-[11px]">
+                <p className="pb-1 text-zinc-300">{text.autoFlowSummaryTitle}</p>
+                <p className="text-zinc-400">
+                  <span className="payfi-label">{text.autoFlowIntentId}:</span>{" "}
+                  <span className="font-mono">{intentId || "—"}</span>
+                </p>
+                <p className="text-zinc-400">
+                  <span className="payfi-label">{text.autoFlowCoreOrderId}:</span>{" "}
+                  <span className="font-mono">{coreOrderIdDisplay}</span>
+                </p>
+                <p className="text-zinc-400">
+                  <span className="payfi-label">{text.autoFlowEscrowId}:</span>{" "}
+                  <span className="font-mono">{coreEscrowIdDisplay}</span>
+                </p>
+                <p className="text-zinc-400">
+                  <span className="payfi-label">{text.autoFlowFundingTx}:</span>{" "}
+                  <span className="font-mono">{autoFlowFundingTxHash ?? "—"}</span>
+                  {autoFlowFundingTxExplorerUrl ? (
+                    <>
+                      {" "}
+                      <a
+                        href={autoFlowFundingTxExplorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sky-400 underline-offset-2 hover:underline"
+                      >
+                        {text.explorerViewTx}
+                      </a>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+          )}
           {!intent?.intentId?.trim() ? (
             <p className="text-sm text-zinc-400">{text.stepNeedIntentFirst}</p>
           ) : intent.status !== "awaiting_funding" ? (
@@ -1671,6 +2320,20 @@ export default function PayFiDemo() {
             </div>
           ) : (
             <>
+              {isConfluxCrossSpace && !fundingOpsOpen ? (
+                <div className="rounded-xl border border-white/8 bg-black/25 px-3 py-3">
+                  <p className="text-[11px] leading-relaxed text-zinc-400">{text.fundOpsCollapsedHint}</p>
+                  <button
+                    type="button"
+                    onClick={() => setFundingOpsOpen(true)}
+                    className="payfi-btn-secondary mt-2 text-xs"
+                  >
+                    {text.expandFundOpsBtn}
+                  </button>
+                </div>
+              ) : null}
+              {(!isConfluxCrossSpace || fundingOpsOpen) && (
+                <>
               <div className="space-y-2 text-sm">
                 <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
                   <span className="payfi-label shrink-0 text-zinc-400">
@@ -1772,6 +2435,8 @@ export default function PayFiDemo() {
                     registerBusy: text.registerTxBusy,
                   }}
                 />
+              )}
+                </>
               )}
             </>
           )}

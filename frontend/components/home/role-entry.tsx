@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import AddHashKeyNetworkButton from "@/components/shared/add-hashkey-network-button";
 import { getPayFiHealth, listIntents, type IntentRecord } from "@/lib/payfi-api";
 import { HASHKEY_TESTNET_CHAIN_ID } from "@/lib/demo-network";
@@ -45,6 +45,19 @@ function statusText(status: string, locale: "zh-CN" | "zh-TW" | "en") {
   }
 }
 
+type MinimalEip1193 = {
+  request: (args: { method: string; params?: unknown[] | Record<string, unknown> }) => Promise<unknown>;
+};
+
+/** Fluent（Conflux Core）在页面注入的 EIP-1193 提供者，见 https://fluentwallet.com/ */
+const FLUENT_CHROME_STORE_URL =
+  "https://chromewebstore.google.com/detail/fluent/eokbbaidfgdndnljmffldfgjklpjkdoi";
+
+function getFluentInjectedProvider(win: Window & { conflux?: MinimalEip1193 }): MinimalEip1193 | null {
+  if (win.conflux?.request) return win.conflux;
+  return null;
+}
+
 export default function RoleEntry() {
   const { locale } = useI18n();
   const router = useRouter();
@@ -64,20 +77,39 @@ export default function RoleEntry() {
   const coreOrderVaultExplorerUrlEnv =
     process.env.NEXT_PUBLIC_CORE_ORDER_VAULT_EXPLORER_URL?.trim() ?? "";
   const coreDepositAssetEnv = process.env.NEXT_PUBLIC_CORE_DEPOSIT_ASSET_ADDRESS?.trim() ?? "";
+  const coreMockErc20Env = process.env.NEXT_PUBLIC_CORE_MOCK_ERC20_ADDRESS?.trim() ?? "";
+  const coreMockErc20ExplorerUrlEnv =
+    process.env.NEXT_PUBLIC_CORE_MOCK_ERC20_EXPLORER_URL?.trim() ?? "";
+  const coreMockErc20HexEnv = process.env.NEXT_PUBLIC_CORE_MOCK_ERC20_HEX_ADDRESS?.trim() ?? "";
   const coreExplorerBaseEnv = process.env.NEXT_PUBLIC_CORESPACE_EXPLORER_BASE_URL?.trim() ?? "";
   const espaceChainIdCrossEnv = process.env.NEXT_PUBLIC_ESPACE_CHAIN_ID?.trim() ?? "";
   const payFiEscrowDisplayEnv =
     process.env.NEXT_PUBLIC_PAYFI_ESCROW_ADDRESS?.trim() || escrowAddressEnv;
   const espaceAdapterEnv = process.env.NEXT_PUBLIC_ESPACE_ADAPTER_ADDRESS?.trim() ?? "";
   const espaceExplorerBaseEnv = process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL?.trim() ?? "";
+  /** Conflux eSpace 演示入金资产；与 README / `frontend/.env.conflux.testnet.example` 一致 */
+  const espaceMockErc20Display =
+    process.env.NEXT_PUBLIC_USDC_CONTRACT?.trim() || "0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca";
+  /** Core Space 单独部署的 MockERC20；避免误回显 eSpace 演示资产地址。 */
+  const coreMockErc20DisplayCandidate = coreMockErc20Env || coreDepositAssetEnv;
+  const coreMockErc20Display =
+    coreMockErc20DisplayCandidate.toLowerCase() === espaceMockErc20Display.toLowerCase()
+      ? ""
+      : coreMockErc20DisplayCandidate;
   const coreOrderVaultDisplayEnv = coreOrderVaultCfxEnv || coreOrderVaultEnv;
   const coreVaultExplorerUrl = contractExplorerUrl(
     coreExplorerBaseEnv,
     coreOrderVaultDisplayEnv,
     coreOrderVaultExplorerUrlEnv,
   );
+  const coreMockErc20ExplorerUrl = contractExplorerUrl(
+    coreExplorerBaseEnv,
+    coreMockErc20Display,
+    coreMockErc20ExplorerUrlEnv,
+  );
   const payFiEscrowExplorerUrl = contractExplorerUrl(espaceExplorerBaseEnv, payFiEscrowDisplayEnv);
   const espaceAdapterExplorerUrl = contractExplorerUrl(espaceExplorerBaseEnv, espaceAdapterEnv);
+  const espaceMockErc20ExplorerUrl = contractExplorerUrl(espaceExplorerBaseEnv, espaceMockErc20Display);
 
   const text = {
     "zh-CN": {
@@ -112,11 +144,18 @@ export default function RoleEntry() {
       espaceAdapterLabel: "ESpaceEscrowAdapter",
       espaceAdapterNote:
         "Relayer 监听 Core 事件后调用 Adapter 的 createEscrowFromCore，将订单映射为 eSpace escrowId。",
-      coreDepositAssetLabel: "保证金代币（Core）",
+      espaceMockErc20Label: "演示资产 MockERC20（eSpace）",
+      coreMockErc20Label: "MockERC20（Core · 保证金代币）",
       viewOnExplorer: "在浏览器中查看",
       walletHintTitle: "钱包连接",
       walletHintBody:
         "本演示 dApp 主流程在 eSpace：请使用 MetaMask（或兼容钱包）连接 Conflux eSpace Testnet。Core Space 下单与保证金请使用 Fluent 连接 Conflux Core Testnet。",
+      addTokenToWallet: "添加Core保证金代币到Fluent Wallet",
+      addingToken: "添加中…",
+      addTokenDone: "已向钱包发起添加代币请求。",
+      addTokenNeedWallet: "未检测到 Fluent 扩展，已在新标签页打开安装页，安装后请刷新本页再试。",
+      addTokenNeedHex:
+        "当前为 Core 的 cfxtest 地址。请在 frontend/.env.local 增加 NEXT_PUBLIC_CORE_MOCK_ERC20_HEX_ADDRESS=0x... 后重试。",
     },
     "zh-TW": {
       subtitle: "選擇角色進入流程，或在下方最近記錄中開啟已有意向。",
@@ -150,11 +189,18 @@ export default function RoleEntry() {
       espaceAdapterLabel: "ESpaceEscrowAdapter",
       espaceAdapterNote:
         "Relayer 監聽 Core 事件後呼叫 Adapter 的 createEscrowFromCore，將訂單映射為 eSpace escrowId。",
-      coreDepositAssetLabel: "保證金代幣（Core）",
+      espaceMockErc20Label: "演示資產 MockERC20（eSpace）",
+      coreMockErc20Label: "MockERC20（Core · 保證金代幣）",
       viewOnExplorer: "在瀏覽器中查看",
       walletHintTitle: "錢包連線",
       walletHintBody:
         "本示範 dApp 主流程在 eSpace：請使用 MetaMask（或相容錢包）連線 Conflux eSpace Testnet。Core Space 下單與保證金請使用 Fluent 連線 Conflux Core Testnet。",
+      addTokenToWallet: "新增 Core 保證金代幣到 Fluent Wallet",
+      addingToken: "新增中…",
+      addTokenDone: "已向錢包送出新增代幣請求。",
+      addTokenNeedWallet: "未偵測到 Fluent 擴充，已在新分頁開啟安裝頁，安裝後請重新整理本頁再試。",
+      addTokenNeedHex:
+        "目前是 Core 的 cfxtest 位址。請在 frontend/.env.local 增加 NEXT_PUBLIC_CORE_MOCK_ERC20_HEX_ADDRESS=0x... 後重試。",
     },
     en: {
       subtitle:
@@ -189,11 +235,19 @@ export default function RoleEntry() {
       espaceAdapterLabel: "ESpaceEscrowAdapter",
       espaceAdapterNote:
         "After the relayer observes Core events, it calls createEscrowFromCore on the adapter to map orders to an eSpace escrowId.",
-      coreDepositAssetLabel: "Deposit asset (Core)",
+      espaceMockErc20Label: "MockERC20 demo asset (eSpace)",
+      coreMockErc20Label: "MockERC20 (Core · deposit asset)",
       viewOnExplorer: "View on explorer",
       walletHintTitle: "Wallets",
       walletHintBody:
         "Main dApp flows run on eSpace: connect Conflux eSpace Testnet with MetaMask (or an EVM-compatible wallet). For Core Space orders and deposits, use Fluent on Conflux Core Testnet.",
+      addTokenToWallet: "Add Core deposit token to Fluent Wallet",
+      addingToken: "Adding…",
+      addTokenDone: "Token watch request sent to wallet.",
+      addTokenNeedWallet:
+        "Fluent extension not found. Opened the install page in a new tab — install, refresh, and try again.",
+      addTokenNeedHex:
+        "Current address is Core cfxtest format. Set NEXT_PUBLIC_CORE_MOCK_ERC20_HEX_ADDRESS=0x... in frontend/.env.local and retry.",
     },
   }[locale];
   const [role, setRole] = useState<Role>("user");
@@ -204,6 +258,9 @@ export default function RoleEntry() {
     "loading" | "postgres" | "memory" | "unknown" | "error"
   >("loading");
   const [databaseProduct, setDatabaseProduct] = useState<string | null>(null);
+  const [coreTokenAddBusy, setCoreTokenAddBusy] = useState(false);
+  const [coreTokenAddMsg, setCoreTokenAddMsg] = useState<string | null>(null);
+  const [coreTokenAddErr, setCoreTokenAddErr] = useState<string | null>(null);
 
   const chainIdEnv = process.env.NEXT_PUBLIC_CHAIN_ID?.trim();
   const chainRpcEnv = process.env.NEXT_PUBLIC_CHAIN_RPC_URL?.trim();
@@ -248,6 +305,44 @@ export default function RoleEntry() {
     setRole(nextRole);
     router.push(`/${nextRole}`);
   };
+
+  const onAddCoreToken = useCallback(async () => {
+    setCoreTokenAddMsg(null);
+    setCoreTokenAddErr(null);
+    const rawAddr = coreMockErc20Display.trim();
+    if (!rawAddr) return;
+    const hexAddress = rawAddr.startsWith("0x")
+      ? rawAddr
+      : coreMockErc20HexEnv.startsWith("0x")
+        ? coreMockErc20HexEnv
+        : "";
+    if (!hexAddress) {
+      setCoreTokenAddErr(text.addTokenNeedHex);
+      return;
+    }
+    const win = window as Window & { conflux?: MinimalEip1193 };
+    const fluent = getFluentInjectedProvider(win);
+    if (!fluent) {
+      window.open(FLUENT_CHROME_STORE_URL, "_blank", "noopener,noreferrer");
+      setCoreTokenAddErr(text.addTokenNeedWallet);
+      return;
+    }
+    setCoreTokenAddBusy(true);
+    try {
+      await fluent.request({
+        method: "wallet_watchAsset",
+        params: {
+          type: "ERC20",
+          options: { address: hexAddress, symbol: "MOCK", decimals: 18 },
+        },
+      });
+      setCoreTokenAddMsg(text.addTokenDone);
+    } catch (e) {
+      setCoreTokenAddErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCoreTokenAddBusy(false);
+    }
+  }, [coreMockErc20Display, coreMockErc20HexEnv, text]);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col gap-8 px-4 pb-12 pt-8 sm:max-w-xl sm:px-6">
@@ -316,12 +411,38 @@ export default function RoleEntry() {
                   </a>
                 )}
               </div>
-              {coreDepositAssetEnv ? (
-                <div className="space-y-1 text-xs">
-                  <p className="payfi-label">{text.coreDepositAssetLabel}</p>
-                  <p className="break-all font-mono text-[11px] text-zinc-400">{coreDepositAssetEnv}</p>
-                </div>
-              ) : null}
+              <div className="space-y-1 text-xs">
+                <p className="payfi-label">{text.coreMockErc20Label}</p>
+                <p className="break-all font-mono text-[11px] text-zinc-400">
+                  {coreMockErc20Display || text.valueUnset}
+                </p>
+                {coreMockErc20ExplorerUrl && coreMockErc20Display ? (
+                  <a
+                    href={coreMockErc20ExplorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block pt-1 text-[11px] text-sky-400/95 underline-offset-2 hover:underline"
+                  >
+                    {text.viewOnExplorer}
+                  </a>
+                ) : null}
+                {coreMockErc20Display ? (
+                  <button
+                    type="button"
+                    onClick={() => void onAddCoreToken()}
+                    disabled={coreTokenAddBusy}
+                    className="payfi-btn-secondary mt-2 text-[11px]"
+                  >
+                    {coreTokenAddBusy ? text.addingToken : text.addTokenToWallet}
+                  </button>
+                ) : null}
+                {coreTokenAddMsg ? (
+                  <p className="pt-1 text-[11px] text-emerald-400/95">{coreTokenAddMsg}</p>
+                ) : null}
+                {coreTokenAddErr ? (
+                  <p className="pt-1 text-[11px] text-amber-300/95">{coreTokenAddErr}</p>
+                ) : null}
+              </div>
             </div>
 
             <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-900/40 p-4">
@@ -359,6 +480,20 @@ export default function RoleEntry() {
                 {espaceAdapterExplorerUrl && (
                   <a
                     href={espaceAdapterExplorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block pt-1 text-[11px] text-sky-400/95 underline-offset-2 hover:underline"
+                  >
+                    {text.viewOnExplorer}
+                  </a>
+                )}
+              </div>
+              <div className="space-y-1 text-xs">
+                <p className="payfi-label">{text.espaceMockErc20Label}</p>
+                <p className="break-all font-mono text-[11px] text-zinc-400">{espaceMockErc20Display}</p>
+                {espaceMockErc20ExplorerUrl && (
+                  <a
+                    href={espaceMockErc20ExplorerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-block pt-1 text-[11px] text-sky-400/95 underline-offset-2 hover:underline"

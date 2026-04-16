@@ -46,6 +46,66 @@ export async function getPayFiHealth(): Promise<PayFiHealthResponse> {
   return data;
 }
 
+export async function triggerCrossSpaceDemo(): Promise<{
+  ok: boolean;
+  taskId: string;
+  status: "running" | "success" | "failed";
+  startedAt?: string;
+}> {
+  const res = await fetch(`${apiRoot()}/debug/cross-space/demo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const data = (await res.json()) as {
+    ok?: boolean;
+    taskId?: string;
+    status?: "running" | "success" | "failed";
+    startedAt?: string;
+    error?: string;
+    detail?: string;
+  };
+  if (!res.ok) throw new Error(apiFailMessage(data, "cross-space demo failed"));
+  return {
+    ok: data.ok ?? true,
+    taskId: data.taskId ?? "",
+    status: data.status ?? "running",
+    startedAt: data.startedAt,
+  };
+}
+
+export async function getCrossSpaceDemoTask(taskId: string): Promise<{
+  taskId: string;
+  status: "running" | "success" | "failed";
+  stdout: string;
+  stderr: string;
+  error?: string;
+  startedAt: string;
+  endedAt?: string;
+}> {
+  const res = await fetch(`${apiRoot()}/debug/cross-space/demo/${encodeURIComponent(taskId)}`);
+  const data = (await res.json()) as {
+    taskId?: string;
+    status?: "running" | "success" | "failed";
+    stdout?: string;
+    stderr?: string;
+    error?: string;
+    startedAt?: string;
+    endedAt?: string;
+    detail?: string;
+  };
+  if (!res.ok) throw new Error(apiFailMessage(data, "cross-space demo task query failed"));
+  return {
+    taskId: data.taskId ?? taskId,
+    status: data.status ?? "running",
+    stdout: data.stdout ?? "",
+    stderr: data.stderr ?? "",
+    error: data.error,
+    startedAt: data.startedAt ?? "",
+    endedAt: data.endedAt,
+  };
+}
+
 export type IntentRecord = {
   intentId: string;
   merchant: string;
@@ -129,6 +189,35 @@ export async function listIntents(): Promise<IntentRecord[]> {
   return data.intents ?? [];
 }
 
+export type CoreIntentLinkRecord = {
+  coreOrderId: string;
+  escrowId: string;
+  intentId?: string;
+  mappedTxHash?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getCoreIntentLinkByIntentId(
+  intentId: string,
+): Promise<CoreIntentLinkRecord | null> {
+  const res = await fetch(`${apiRoot()}/intents/core-links/by-intent/${encodeURIComponent(intentId)}`);
+  if (res.status === 404) return null;
+  const data = (await res.json()) as { link?: CoreIntentLinkRecord; error?: string };
+  if (!res.ok) throw new Error(data.error || "get core-intent link failed");
+  return data.link ?? null;
+}
+
+export async function getCoreIntentLinkByEscrowId(
+  escrowId: string,
+): Promise<CoreIntentLinkRecord | null> {
+  const res = await fetch(`${apiRoot()}/intents/core-links/by-escrow/${encodeURIComponent(escrowId)}`);
+  if (res.status === 404) return null;
+  const data = (await res.json()) as { link?: CoreIntentLinkRecord; error?: string };
+  if (!res.ok) throw new Error(data.error || "get core-intent link failed");
+  return data.link ?? null;
+}
+
 export async function fundingHint(intentId: string): Promise<{
   to: string;
   data: `0x${string}`;
@@ -157,6 +246,29 @@ export async function postFundingTx(
   );
   const data = await res.json();
   if (!res.ok) throw new Error(apiFailMessage(data, "funding/tx failed"));
+  return data;
+}
+
+export async function autoFundIntentDemo(intentId: string): Promise<{
+  ok: boolean;
+  intentId?: string;
+  status?: string;
+  escrowId?: string;
+  approveTxHash?: string | null;
+  fundingTxHash?: string;
+  payer?: string;
+  chain?: boolean;
+}> {
+  const res = await fetch(
+    `${apiRoot()}/intents/${encodeURIComponent(intentId)}/funding/auto-demo`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    },
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(apiFailMessage(data, "auto funding failed"));
   return data;
 }
 

@@ -133,6 +133,53 @@
 
 ## 5. 交易流
 
+## 5.0 三个 ID 的关系与存储位置
+
+为避免前后端与链上语义混淆，Cross-Space 流程统一使用以下三类 ID：
+
+- `intentId`（PayFi 业务意向 ID）
+  - 生成来源：后端 API 创建意向时生成（UUID）。
+  - 主要存储：链下（`IntentRecord`，内存或 PostgreSQL）。
+  - 链上关系：通常不直接作为链上主键；需要链上关联时通过哈希/派生方式间接绑定。
+- `coreOrderId`（Core Space 订单 ID）
+  - 生成来源：Core 合约 `CoreOrderVault` 下单流程（`placeOrderDeposit`）的订单编号。
+  - 主要存储：链上（Core 事件与状态）；链下保存副本用于查询。
+  - 链下映射：Relayer 回写 `coreOrderId -> escrowId`，用于跨空间追踪。
+- `escrowId`（eSpace 托管 ID）
+  - 生成来源：eSpace 侧 `ESpaceEscrowAdapter.createEscrowFromCore` / `PayFiEscrow` 创建托管实例时确定。
+  - 主要存储：链上（eSpace 合约状态）；链下保存副本用于前端展示与检索。
+  - 绑定关系：在业务流程推进后，可与 `intentId`、`coreOrderId` 建立一对一（或阶段性）关联。
+
+关系图（逻辑）：
+
+1. Core 下单得到 `coreOrderId`（链上 Core）
+2. Relayer 在 eSpace 创建托管得到 `escrowId`（链上 eSpace）
+3. 链下映射表记录 `coreOrderId -> escrowId`
+4. 业务意向 `intentId` 在链下记录，并在后续流程中与 `escrowId` 对齐，形成 `intentId <-> escrowId <-> coreOrderId` 可追溯链路
+
+ASCII 流程图（路演可直接引用）：
+
+```text
+[Core Space]                                  [eSpace]
+ buyer                                          ESpaceEscrowAdapter --> PayFiEscrow
+   |                                                    ^
+   | placeOrderDeposit(...)                             | createEscrowFromCore(...)
+   v                                                    |
+CoreOrderVault -- emit OrderDeposited(coreOrderId) --> relayer (off-chain worker)
+                                                          |
+                                                          | callback: coreOrderId, escrowId
+                                                          v
+                                         [Off-chain] PayFi API + mapping DB
+                                             - save link: coreOrderId <-> escrowId
+                                             - IntentRecord(intentId, ..., escrowId?)
+                                                          |
+                                                          | funding / reconciliation
+                                                          v
+                                 bind business view: intentId <-> escrowId <-> coreOrderId
+```
+
+图例：`[Core Space]`、`[eSpace]`、`CoreOrderVault`、`ESpaceEscrowAdapter`、`PayFiEscrow` 为链上组件；`relayer (off-chain worker)`、`PayFi API`、`IntentRecord`、`coreOrderId <-> escrowId` 映射表为链下组件。
+
 ## 5.1 第一段（路演）交易流：事件映射闭环
 
 1. `buyer` 调用 Core `placeOrderDeposit`
@@ -221,6 +268,44 @@
 - 准备 3 个交易哈希：Core 下单、eSpace 创建、eSpace 放款
 - 准备 1 个失败样例：重放攻击被拒绝
 - 准备 1 张状态流转图用于答辩
+
+## 7.4 前端步骤状态机（当前实现）
+
+用于说明用户页 5 步向导中，与 Cross-Space 主流程直接相关的跳转规则（`新建意向 -> 链上入金 -> 分期放款`）。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Step2: 默认进入/无 intent
+
+    state "Step2 新建意向" as Step2
+    state "Step3 链上入金" as Step3
+    state "Step4 分期放款" as Step4
+    state "Step5 剩余退回" as Step5
+    state "Step1 合同意图列表" as Step1
+
+    Step2 --> Step3: 新建合同意向成功
+    Step2 --> Step2: 新建失败/参数校验失败
+
+    Step3 --> Step4: 自动完成映射并入金成功
+    Step3 --> Step3: 自动流程失败或超时
+    Step3 --> Step3: 手动授权/入金进行中
+    Step3 --> Step4: intent.status != awaiting_funding
+
+    Step4 --> Step3: intent.status == awaiting_funding
+    Step4 --> Step5: 满足退款条件并切换到退款步骤
+    Step4 --> Step4: 签名/提交放款
+
+    Step1 --> Step2: 无 intent 或切回新建
+    Step1 --> Step3: 选中 awaiting_funding 的 intent
+    Step1 --> Step4: 选中非 awaiting_funding 的 intent
+```
+
+补充说明：
+
+- Conflux + Cross-Space 场景中，“展开链上入金操作（手动）”仅控制 Step3 卡片内手动操作区的折叠显示，不改变主步骤跳转。
+- 当前单向规则：
+  1. `onCreate` 成功后，进入 Step3（链上入金）；
+  2. `onAutoMapAndFundDemo` 成功后，进入 Step4（分期放款），不回 Step2。
 
 ---
 

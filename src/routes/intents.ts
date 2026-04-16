@@ -4,6 +4,7 @@ import {
   encodeFunctionData,
   getAddress,
   isHash,
+  parseAbi,
   zeroAddress,
   type Address,
   type Hex,
@@ -22,6 +23,7 @@ import { payFiEscrowAbi } from "../abi/payFiEscrow.js";
 import {
   getPublicClient,
   getSubmitterWallet,
+  getWalletClientByPrivateKey,
   isChainMode,
   parseChainIdFromEnv,
 } from "../chain/config.js";
@@ -36,6 +38,10 @@ import {
 } from "../hashkey/client.js";
 
 const router = Router();
+const erc20ApproveAbi = parseAbi([
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+]);
 
 let demoEscrowCounter = 1;
 
@@ -709,6 +715,136 @@ router.post("/:intentId/funding/tx", async (req, res) => {
   } catch (e) {
     res.status(502).json({
       error: "funding confirm failed",
+      detail: e instanceof Error ? e.message : String(e),
+    });
+  }
+});
+
+/** 仅本地演示：后端托管账号自动完成 eSpace Approve + createAndDeposit 并写回 intent。 */
+router.post("/:intentId/funding/auto-demo", async (req, res) => {
+  if (process.env.PAYFIDEMO_DEBUG !== "true") {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  const row = await intentStore.getIntent(req.params.intentId);
+  if (!row) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  if (!isChainMode()) {
+    res.status(400).json({ error: "chain mode disabled" });
+    return;
+  }
+  if (row.status !== "awaiting_funding") {
+    res.status(400).json({ error: `invalid status: ${row.status}` });
+    return;
+  }
+  try {
+    const escrowAddr = getAddress(process.env.ESCROW_ADDRESS!.trim());
+    const publicClient = getPublicClient();
+    // Important: `createAndDeposit` uses `msg.sender` as the buyer/funder.
+    // In CrossSpace tests, intent.user == BUYER_PRIVATE_KEY address.
+    const buyerPk = process.env.BUYER_PRIVATE_KEY?.trim();
+    if (!buyerPk) {
+      res.status(400).json({ error: "BUYER_PRIVATE_KEY is required for auto-demo" });
+      return;
+    }
+    const walletClient = getWalletClientByPrivateKey(buyerPk);
+    const payer = walletClient.account.address;
+    const total = BigInt(row.amountTotal);
+    const allowance = (await publicClient.readContract({
+      address: getAddress(row.asset),
+      abi: erc20ApproveAbi,
+      functionName: "allowance",
+      args: [payer, escrowAddr],
+    })) as bigint;
+    let approveTxHash: `0x${string}` | null = null;
+    if (allowance < total) {
+      approveTxHash = await walletClient.writeContract({
+        address: getAddress(row.asset),
+        abi: erc20ApproveAbi,
+        functionName: "approve",
+        args: [escrowAddr, total],
+      });
+      const approveRc = await publicClient.waitForTransactionReceipt({ hash: approveTxHash });
+      if (approveRc.status !== "success") {
+        res.status(502).json({ error: "approve failed", txHash: approveTxHash });
+        return;
+      }
+    }
+    let disputeModuleAddr: Address = zeroAddress;
+    if (row.anchor.disputeResolver) {
+      disputeModuleAddr = getAddress(row.anchor.disputeResolver);
+    }
+    const fundingTxHash = await walletClient.writeContract({
+      address: escrowAddr,
+      abi: payFiEscrowAbi,
+      functionName: "createAndDeposit",
+      args: [
+        row.merchant as Address,
+        row.asset as Address,
+        BigInt(row.amountTotal),
+        BigInt(row.amountPerLesson),
+        row.maxReleases,
+        BigInt(row.durationSeconds),
+        row.anchor.agreementHash as Hex,
+        disputeModuleAddr,
+      ],
+    });
+    const rc = await publicClient.waitForTransactionReceipt({ hash: fundingTxHash });
+    if (rc.status !== "success") {
+      res.status(502).json({ error: "createAndDeposit failed", txHash: fundingTxHash });
+      return;
+    }
+    const parsed = await parseEscrowCreatedFromReceipt(escrowAddr, fundingTxHash);
+    if (!parsed) {
+      res.status(502).json({
+        error: "EscrowCreated not found in receipt",
+        txHash: fundingTxHash,
+      });
+      return;
+    }
+    // Auto-funding uses buyer signer as payer.
+    row.user = parsed.user;
+    row.fundingTxHash = fundingTxHash;
+    row.escrowId = parsed.escrowId;
+    row.status = "active";
+    row.expiresAt = parsed.expiresAt;
+    await intentStore.saveIntent(row);
+    await coreIntentLinkStore
+      .getByEscrowId(parsed.escrowId)
+      .then(async (link) => {
+        if (!link) return;
+        await coreIntentLinkStore.upsert({
+          coreOrderId: link.coreOrderId,
+          escrowId: parsed.escrowId,
+          intentId: row.intentId,
+        });
+      });
+    try {
+      await settlementAdapter.emit("INTENT_FUNDED", {
+        intentId: row.intentId,
+        escrowId: parsed.escrowId,
+        txHash: fundingTxHash,
+        ...row.anchor,
+      });
+    } catch (sideErr) {
+      console.error("[funding/auto-demo] settlement emit failed:", sideErr);
+    }
+    res.json({
+      ok: true,
+      intentId: row.intentId,
+      status: row.status,
+      escrowId: parsed.escrowId,
+      approveTxHash,
+      fundingTxHash,
+      payer,
+      chain: true,
+      mode: "auto-demo",
+    });
+  } catch (e) {
+    res.status(502).json({
+      error: "auto funding failed",
       detail: e instanceof Error ? e.message : String(e),
     });
   }

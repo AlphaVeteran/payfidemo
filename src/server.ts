@@ -8,6 +8,8 @@ process.on("unhandledRejection", (reason) => {
 });
 import cors from "cors";
 import express from "express";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runMigrations } from "./db/migrate.js";
@@ -36,8 +38,73 @@ app.use(
 );
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(__dirname, "../web");
+const repoRootDir = path.resolve(__dirname, "..");
+const crossSpaceDemoScriptPath = path.resolve(repoRootDir, "scripts/cross-space-demo.mjs");
 
 const API = "/api/payfi/v1";
+type CrossSpaceDemoTask = {
+  taskId: string;
+  status: "running" | "success" | "failed";
+  stdout: string;
+  stderr: string;
+  error?: string;
+  startedAt: string;
+  endedAt?: string;
+};
+const crossSpaceDemoTasks = new Map<string, CrossSpaceDemoTask>();
+const crossSpaceDemoChildren = new Map<string, ReturnType<typeof spawn>>();
+let runningCrossSpaceDemoTaskId: string | null = null;
+
+function appendBounded(prev: string, chunk: string): string {
+  const next = `${prev}${chunk}`;
+  return next.length > 8000 ? next.slice(next.length - 8000) : next;
+}
+
+function runCrossSpaceDemoInBackground(task: CrossSpaceDemoTask): void {
+  const timeoutMs = Number(process.env.CROSS_SPACE_DEMO_TIMEOUT_MS || "180000");
+  const child = spawn("node", [crossSpaceDemoScriptPath], {
+    cwd: repoRootDir,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  crossSpaceDemoChildren.set(task.taskId, child);
+  child.stdout.on("data", (buf: Buffer) => {
+    task.stdout = appendBounded(task.stdout, buf.toString("utf8"));
+  });
+  child.stderr.on("data", (buf: Buffer) => {
+    task.stderr = appendBounded(task.stderr, buf.toString("utf8"));
+  });
+  const timeout = setTimeout(() => {
+    child.kill("SIGTERM");
+    task.status = "failed";
+    task.error = `cross-space demo timed out after ${timeoutMs}ms`;
+    task.endedAt = new Date().toISOString();
+    crossSpaceDemoChildren.delete(task.taskId);
+    if (runningCrossSpaceDemoTaskId === task.taskId) runningCrossSpaceDemoTaskId = null;
+  }, timeoutMs);
+  child.on("error", (err) => {
+    clearTimeout(timeout);
+    task.status = "failed";
+    task.error = err instanceof Error ? err.message : String(err);
+    task.endedAt = new Date().toISOString();
+    crossSpaceDemoChildren.delete(task.taskId);
+    if (runningCrossSpaceDemoTaskId === task.taskId) runningCrossSpaceDemoTaskId = null;
+  });
+  child.on("close", (code) => {
+    clearTimeout(timeout);
+    crossSpaceDemoChildren.delete(task.taskId);
+    if (task.status !== "failed") {
+      if (code === 0) {
+        task.status = "success";
+      } else {
+        task.status = "failed";
+        task.error = `cross-space demo failed (code ${code ?? "null"})\n${task.stderr || task.stdout}`;
+      }
+      task.endedAt = new Date().toISOString();
+    }
+    if (runningCrossSpaceDemoTaskId === task.taskId) runningCrossSpaceDemoTaskId = null;
+  });
+}
 
 app.get("/health", (_req, res) => {
   const pgOn = isPersistenceEnabled();
@@ -86,6 +153,76 @@ app.post(`${API}/debug/intents/:intentId/expire`, async (req, res) => {
   row.expiresAt = Math.floor(Date.now() / 1000) - 60;
   await intentStore.saveIntent(row);
   res.json({ ok: true, intentId: row.intentId, expiresAt: row.expiresAt });
+});
+
+/** 仅本地演示：触发 scripts/cross-space-demo.mjs（Core 下单与映射） */
+app.post(`${API}/debug/cross-space/demo`, async (_req, res) => {
+  if (process.env.PAYFIDEMO_DEBUG !== "true") {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  if (runningCrossSpaceDemoTaskId) {
+    const task = crossSpaceDemoTasks.get(runningCrossSpaceDemoTaskId);
+    res.status(409).json({
+      error: "cross-space demo is already running",
+      taskId: runningCrossSpaceDemoTaskId,
+      status: task?.status ?? "running",
+    });
+    return;
+  }
+  const taskId = randomUUID();
+  const task: CrossSpaceDemoTask = {
+    taskId,
+    status: "running",
+    stdout: "",
+    stderr: "",
+    startedAt: new Date().toISOString(),
+  };
+  crossSpaceDemoTasks.set(taskId, task);
+  runningCrossSpaceDemoTaskId = taskId;
+  runCrossSpaceDemoInBackground(task);
+  res.json({ ok: true, taskId, status: task.status, startedAt: task.startedAt });
+});
+
+app.get(`${API}/debug/cross-space/demo/:taskId`, async (req, res) => {
+  if (process.env.PAYFIDEMO_DEBUG !== "true") {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  const taskId = req.params.taskId.trim();
+  const task = crossSpaceDemoTasks.get(taskId);
+  if (!task) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json(task);
+});
+
+app.post(`${API}/debug/cross-space/demo/:taskId/cancel`, async (req, res) => {
+  if (process.env.PAYFIDEMO_DEBUG !== "true") {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  const taskId = req.params.taskId.trim();
+  const task = crossSpaceDemoTasks.get(taskId);
+  if (!task) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  if (task.status !== "running") {
+    res.json({ ok: true, taskId, status: task.status, note: "task already finished" });
+    return;
+  }
+  const child = crossSpaceDemoChildren.get(taskId);
+  if (child && !child.killed) {
+    child.kill("SIGTERM");
+  }
+  task.status = "failed";
+  task.error = "cross-space demo cancelled by user";
+  task.endedAt = new Date().toISOString();
+  crossSpaceDemoChildren.delete(taskId);
+  if (runningCrossSpaceDemoTaskId === taskId) runningCrossSpaceDemoTaskId = null;
+  res.json({ ok: true, taskId, status: task.status, error: task.error, endedAt: task.endedAt });
 });
 
 app.use((_req, res) => {

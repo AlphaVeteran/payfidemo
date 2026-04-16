@@ -77,15 +77,15 @@
 ### 根目录（后端/脚本）
 
 1. 切换配置：
-   - `npm run env:switch:conflux-testnet`
+  - `npm run env:switch:conflux-testnet`
 2. 检查 `.env.conflux.testnet` / `.env.conflux.testnet.private` 至少包含：
-   - `CORE_ORDER_VAULT_ADDRESS`
-   - `ESPACE_ADAPTER_ADDRESS`
-   - `PAYFI_ESCROW_ADDRESS`
-   - `RELAYER_PRIVATE_KEY`
-   - `BUYER_PRIVATE_KEY`
-   - `SELLER_ADDRESS`
-   - `CORE_DEPOSIT_ASSET_ADDRESS`
+  - `CORE_ORDER_VAULT_ADDRESS`
+  - `ESPACE_ADAPTER_ADDRESS`
+  - `PAYFI_ESCROW_ADDRESS`
+  - `RELAYER_PRIVATE_KEY`
+  - `BUYER_PRIVATE_KEY`
+  - `SELLER_ADDRESS`
+  - `CORE_DEPOSIT_ASSET_ADDRESS`
 
 ### 前端（`frontend/.env.local`）
 
@@ -98,6 +98,164 @@
 - `NEXT_PUBLIC_ESPACE_ADAPTER_ADDRESS`
 - `NEXT_PUBLIC_CORE_ORDER_VAULT_CFX_ADDRESS`（或兼容字段）
 - `NEXT_PUBLIC_CORESPACE_CHAIN_ID=1`
+- `**NEXT_PUBLIC_CORE_MOCK_ERC20_ADDRESS`**：Core Space **单独部署**的 MockERC20 合约地址（与 eSpace 上 `0x680E…` 非同一条链上的合约）；首页 Core 卡片展示用。未设置时可回退到 `NEXT_PUBLIC_CORE_DEPOSIT_ASSET_ADDRESS`。
+- 根目录 `**CORE_DEPOSIT_ASSET_ADDRESS`**：须与上述 Core MockERC20 地址一致，供 `cross-space-demo` 等脚本使用。
+
+### 3.4 Core Space 部署 MockERC20
+
+Core 与 eSpace 合约地址不可混用；保证金在 `CoreOrderVault` 中仅支持 **ERC20**。
+
+```bash
+npm run forge:build
+# 配置 CORE_RPC_URL、CORE_CHAIN_ID=1、DEPLOYER_PRIVATE_KEY（或 PRIVATE_KEY）
+npm run deploy:core-space:mock-erc20
+```
+
+部署成功后，将日志中的合约地址写入 `**NEXT_PUBLIC_CORE_MOCK_ERC20_ADDRESS**`（前端）与 `**CORE_DEPOSIT_ASSET_ADDRESS**`（根 `.env`），并重启前端。
+
+### 3.5 给 4 个账户发放测试代币（各 10,000 MockERC20）
+
+为避免“余额不足”影响主流程测试，建议先在两条链分别给测试账户充值。以下命令默认 `MockERC20` 为 **18 位小数**，每个账户发放 `10000 * 10^18`。
+
+#### eSpace（chainId 71）
+
+`cast` 可直接用于 eSpace（EVM RPC）：
+
+```bash
+export ESPACE_RPC_URL=https://evmtestnet.confluxrpc.com
+export ESPACE_TOKEN=0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca
+export PRIVATE_KEY=0x你的私钥
+
+AMOUNT="$(cast --to-wei 10000 ether)"
+
+for addr in \
+  0x接收者1 \
+  0x接收者2 \
+  0x接收者3 \
+  0x接收者4
+do
+  cast send "$ESPACE_TOKEN" \
+    "mint(address,uint256)" \
+    "$addr" \
+    "$AMOUNT" \
+    --rpc-url "$ESPACE_RPC_URL" \
+    --private-key "$PRIVATE_KEY"
+done
+```
+
+#### Core Space（networkId 1）
+
+Core Space 公共 RPC 不提供完整 `eth_*` 接口，建议使用本仓库同款 `js-conflux-sdk` 调用：
+
+```bash
+cd /Users/amberlu/Documents/payfidemo
+
+export CORE_RPC_URL=https://test.confluxrpc.com
+export CORE_CHAIN_ID=1
+export CORE_TOKEN=cfxtest:acazrp5f7ff2cnj3w669k8up07wbk7j6cpvsn9sjrc
+export PRIVATE_KEY=0x你的私钥
+
+node --input-type=module <<'EOF'
+import fs from "node:fs";
+import { Conflux } from "js-conflux-sdk";
+
+const recipients = [
+  "cfxtest:或0x接收者1",
+  "cfxtest:或0x接收者2",
+  "cfxtest:或0x接收者3",
+  "cfxtest:或0x接收者4",
+];
+const amount = (10000n * 10n ** 18n).toString();
+
+const artifact = JSON.parse(fs.readFileSync("out/MockERC20.sol/MockERC20.json", "utf8"));
+const abi = artifact.abi;
+const rpc = process.env.CORE_RPC_URL;
+const networkId = Number(process.env.CORE_CHAIN_ID || "1");
+const rawPk = process.env.PRIVATE_KEY || "";
+const privateKey = rawPk.startsWith("0x") ? rawPk : `0x${rawPk}`;
+const token = process.env.CORE_TOKEN;
+
+const cfx = new Conflux({ url: rpc, networkId });
+const account = cfx.wallet.addPrivateKey(privateKey);
+const contract = cfx.Contract({ abi, address: token });
+
+for (const to of recipients) {
+  const txHash = await contract.mint(to, amount).sendTransaction({ from: account.address });
+  console.log("tx", txHash);
+  let receipt = null;
+  while (!receipt) {
+    receipt = await cfx.cfx.getTransactionReceipt(txHash);
+    if (!receipt) await new Promise((r) => setTimeout(r, 1500));
+  }
+  if (receipt.outcomeStatus !== 0) {
+    throw new Error(`mint failed for ${to}, outcomeStatus=${receipt.outcomeStatus}`);
+  }
+  console.log("mined", to);
+}
+EOF
+```
+
+> 说明：`CORE_TOKEN` 请填写 Core Space 上单独部署的 MockERC20（例如 `.env` 中的 `CORE_DEPOSIT_ASSET_ADDRESS`）；不要与 eSpace 的 `0x680E...` 混用。
+
+#### 批量校验 4 个地址余额（可选）
+
+发放完成后，可用以下命令快速核对每个地址是否达到预期余额。
+
+**eSpace（`cast call`）**
+
+```bash
+export ESPACE_RPC_URL=https://evmtestnet.confluxrpc.com
+export ESPACE_TOKEN=0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca
+
+for addr in \
+  0x接收者1 \
+  0x接收者2 \
+  0x接收者3 \
+  0x接收者4
+do
+  raw=$(cast call "$ESPACE_TOKEN" "balanceOf(address)(uint256)" "$addr" --rpc-url "$ESPACE_RPC_URL")
+  human=$(cast --from-wei "$raw" ether)
+  echo "$addr => $human MOCK (raw=$raw)"
+done
+```
+
+**Core Space（`js-conflux-sdk`）**
+
+```bash
+cd /Users/amberlu/Documents/payfidemo
+
+export CORE_RPC_URL=https://test.confluxrpc.com
+export CORE_CHAIN_ID=1
+export CORE_TOKEN=cfxtest:acazrp5f7ff2cnj3w669k8up07wbk7j6cpvsn9sjrc
+
+node --input-type=module <<'EOF'
+import fs from "node:fs";
+import { Conflux } from "js-conflux-sdk";
+
+const recipients = [
+  "cfxtest:或0x接收者1",
+  "cfxtest:或0x接收者2",
+  "cfxtest:或0x接收者3",
+  "cfxtest:或0x接收者4",
+];
+
+const artifact = JSON.parse(fs.readFileSync("out/MockERC20.sol/MockERC20.json", "utf8"));
+const abi = artifact.abi;
+const rpc = process.env.CORE_RPC_URL;
+const networkId = Number(process.env.CORE_CHAIN_ID || "1");
+const token = process.env.CORE_TOKEN;
+
+const cfx = new Conflux({ url: rpc, networkId });
+const contract = cfx.Contract({ abi, address: token });
+
+for (const addr of recipients) {
+  const bal = await contract.balanceOf(addr);
+  const raw = bal.toString();
+  const human = Number(raw) / 1e18;
+  console.log(`${addr} => ${human} MOCK (raw=${raw})`);
+}
+EOF
+```
 
 ---
 
@@ -126,6 +284,7 @@ npm run relayer:core-to-espace
 
 - 出现 relayer 启动日志（如 `started at core block ...`）。
 - 后续可观察到 `mapped coreOrder=... tx=...`。
+- Core 侧监听基于 `cfx_epochNumber` / `cfx_getLogs`（不是 `eth_*`），可直接对接 `https://test.confluxrpc.com`。
 
 ---
 
@@ -139,11 +298,11 @@ npm run relayer:core-to-espace
 
 1. Fluent 切换到 `buyer`（Core Testnet）。
 2. 新开终端 D 执行：
-   - `npm run demo:cross-space`
+  - `npm run demo:cross-space`
 3. 观察终端输出：
-   - demo 终端出现 `core order placed orderId=...`
-   - relayer 终端出现 `mapped coreOrder=...`
-   - demo 终端出现 `mapped to escrowId=...`
+  - demo 终端出现 `core order placed orderId=...`
+  - relayer 终端出现 `mapped coreOrder=...`
+  - demo 终端出现 `mapped to escrowId=...`
 
 通过标准：
 
@@ -155,20 +314,31 @@ npm run relayer:core-to-espace
 - 若超时：优先确认 relayer 进程是否正常运行；
 - 检查 Core/eSpace RPC、Adapter 地址、Relayer 私钥是否正确；
 - 检查 `RELAYER_FROM_BLOCK` 是否设置过大导致漏监听。
+- 若报 `eth_blockNumber does not exist`：说明仍在使用旧脚本，更新到当前仓库版本后重试。
 
 ## 5.2 用例 B：前端新建合同意向（eSpace）
 
 目标：验证用户可在前端创建 `intent`。
+
+### 托管币种（资产）应选什么？
+
+本仓库 **Conflux eSpace Testnet（chainId 71）** 演示路径与 README「已部署合约」一致时，**入金资产应使用与 `PayFiEscrow` 配置相同的 ERC20**，当前文档示例为 **MockERC20**（地址见 README / `frontend/.env.conflux.testnet.example` 中的 `NEXT_PUBLIC_USDC_CONTRACT`）。新建意向时后端会把该地址写入 `intent.asset`，后续 Approve/Deposit 也针对该代币。
+
+- **推荐（与现网示例一致）**：**MockERC20** — 与已部署 `PayFiEscrow`、示例环境变量对齐，联调成本最低。
+- **不推荐在本演示里当作默认**：**CFX** — 为原生币；当前前端托管入金路径为 **ERC20 授权 + 转入托管**，与 CFX 无关（Gas 仍用 CFX）。
+- **USDC / USDT（含测试网稳定币）**：仅当你们在 **同一链上** 自行部署或配置 `PayFiEscrow` 接受该代币，并把 `NEXT_PUBLIC_USDC_CONTRACT`（及根目录 `USDC_CONTRACT` / `ESCROW_ADDRESS`）改成与白名单一致地址后再测；**不要与 README 示例 MockERC20 混用**。
+
+页面上的「托管总额」在 Base Sepolia / HashKey 等公网测试网场景按 **USDC 小数位** 解析；若你本地前端仍落在 Anvil 或小数位与资产不一致，以 `intent.asset` 与 `demoUsdcDecimals` 实际配置为准。
 
 步骤：
 
 1. MetaMask 切换 eSpace Testnet + `buyer` 账号。
 2. 打开首页，进入“我是用户”。
 3. 在“新建合同意向”填写：
-   - 商家地址：`seller` 地址
-   - 托管总额（例：`10`）
-   - 分期期数（例：`5`）
-   - 托管周期（例：`1` 小时）
+  - 商家地址：`seller` 地址
+  - 托管总额（例：`10`）
+  - 分期期数（例：`5`）
+  - 托管周期（例：`1` 小时）
 4. 点击“新建合同意向”。
 
 通过标准：
@@ -184,8 +354,8 @@ npm run relayer:core-to-espace
 步骤：
 
 1. 在用户页 Step 3（链上入金）确认：
-   - 钱包地址 = `intent.user`
-   - 网络为 eSpace（71）
+  - 钱包地址 = `intent.user`
+  - 网络为 eSpace（71）
 2. 点击“授权代币”（Approve）并在 MetaMask 确认。
 3. 点击“存入托管”（Deposit）并确认。
 4. 等待状态刷新。
@@ -203,12 +373,12 @@ npm run relayer:core-to-espace
 步骤：
 
 1. 用户签名：
-   - MetaMask 使用 `buyer`，在用户页 Step 4 点击“用户签名”。
+  - MetaMask 使用 `buyer`，在用户页 Step 4 点击“用户签名”。
 2. 商家签名：
-   - 切换 MetaMask 到 `seller`；
-   - 进入商家控制台，选择同一 `intentId`，完成商家签名。
+  - 切换 MetaMask 到 `seller`；
+  - 进入商家控制台，选择同一 `intentId`，完成商家签名。
 3. 提交放款：
-   - 在可提交端点击“提交分期放款”。
+  - 在可提交端点击“提交分期放款”。
 4. 重复执行，直到达到期数上限或进入目标状态。
 
 通过标准：
@@ -236,14 +406,16 @@ npm run relayer:core-to-espace
 
 ## 6. 验收记录模板（建议复制使用）
 
-| 项目 | 结果 | 关键证据 |
-|---|---|---|
-| Core 下单 | 通过/失败 | Core Tx Hash |
-| eSpace 映射 | 通过/失败 | Adapter Tx Hash |
-| 新建 intent | 通过/失败 | intentId |
-| 入金 | 通过/失败 | Approve/Deposit Tx |
-| 双签放款 | 通过/失败 | Release Tx + releaseCount |
-| 到期退款（可选） | 通过/失败 | Refund Tx |
+
+| 项目        | 结果    | 关键证据                      |
+| --------- | ----- | ------------------------- |
+| Core 下单   | 通过/失败 | Core Tx Hash              |
+| eSpace 映射 | 通过/失败 | Adapter Tx Hash           |
+| 新建 intent | 通过/失败 | intentId                  |
+| 入金        | 通过/失败 | Approve/Deposit Tx        |
+| 双签放款      | 通过/失败 | Release Tx + releaseCount |
+| 到期退款（可选）  | 通过/失败 | Refund Tx                 |
+
 
 建议同时记录：
 
@@ -259,15 +431,18 @@ npm run relayer:core-to-espace
 - 钱包网络不一致  
   - 现象：按钮不可点或交易失败  
   - 处理：MetaMask 切 71，Fluent 切 1；确认当前操作链与页面提示一致。
-
 - 角色地址不一致  
   - 现象：提示“当前钱包必须是合同用户/商家”  
   - 处理：切换到对应角色账号再操作。
-
 - relayer 无映射日志  
   - 现象：`demo:cross-space` 超时等待 `CoreOrderMapped`  
-  - 处理：检查 relayer 是否在运行、Adapter 地址与私钥是否匹配、RPC 是否可用。
-
+  - 处理：检查 relayer 是否在运行、Adapter 地址与私钥是否匹配、RPC 是否可用；Core 端点请使用支持 `cfx_*` 的 RPC（如 `https://test.confluxrpc.com`）。
+- relayer 启动即报 RPC method 不存在  
+  - 现象：`eth_blockNumber does not exist / is not available`  
+  - 处理：拉取最新代码并确认 `scripts/relay-core-to-espace.mjs` 已切换到 Core `cfx_*` 调用（若本地有旧缓存进程，请先重启 relayer）。
+- `cross-space demo is already running`  
+  - 现象：点击“缴纳保证金 / 自动流程”时，接口返回已有任务正在运行。  
+  - 处理：先查看返回里的 `taskId`，再调用取消接口：`POST /api/payfi/v1/debug/cross-space/demo/<taskId>/cancel`，取消后重新点击 Demo 按钮（或重新 `POST /api/payfi/v1/debug/cross-space/demo`）。
 - intent 查不到  
   - 现象：用户台/商家台无法检索  
   - 处理：确认 `NEXT_PUBLIC_PAYFI_API_URL` 与创建 intent 的环境一致，不要混用本地与线上 API。
@@ -294,11 +469,11 @@ npm run relayer:core-to-espace
 
 1. Relayer 在 `createEscrowFromCore` 成功后，读取 `CoreOrderMapped` 事件获得 `escrowId`；
 2. Relayer 回调后端接口 `POST /api/payfi/v1/intents/core-links/mapped` 写入
-   `coreOrderId -> escrowId`；
+  `coreOrderId -> escrowId`；
 3. 用户意向完成入金并拿到 `escrowId` 时，后端自动补齐
-   `escrowId -> intentId`；
+  `escrowId -> intentId`；
 4. 最终形成可查询的三者映射：
-   `coreOrderId <-> escrowId <-> intentId`。
+  `coreOrderId <-> escrowId <-> intentId`。
 
 ### 9.1 查询接口
 
@@ -316,4 +491,3 @@ npm run relayer:core-to-espace
 - `PAYFI_API_URL=http://127.0.0.1:8787`
 
 `npm run relayer:core-to-espace` 运行后会自动回写映射。
-

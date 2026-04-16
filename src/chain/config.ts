@@ -61,10 +61,14 @@ export function getSubmitterWallet() {
   if (!submitterPk) {
     throw new Error("missing SUBMITTER_PRIVATE_KEY or DEPLOYER_PRIVATE_KEY");
   }
-  const pk = submitterPk as Hex;
+  return getWalletClientByPrivateKey(submitterPk);
+}
+
+export function getWalletClientByPrivateKey(privateKeyRaw: string) {
+  const pk = privateKeyRaw.startsWith("0x") ? privateKeyRaw : (`0x${privateKeyRaw}` as Hex);
   const url = process.env.CHAIN_RPC_URL!;
   const chain = chainFromEnv();
-  const account = privateKeyToAccount(pk);
+  const account = privateKeyToAccount(pk as Hex);
   return createWalletClient({
     account,
     chain,

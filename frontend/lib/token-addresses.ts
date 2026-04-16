@@ -1,5 +1,8 @@
 import { baseSepolia } from "wagmi/chains";
-import { HASHKEY_TESTNET_CHAIN_ID } from "@/lib/demo-network";
+import {
+  CONFLUX_ESPACE_TESTNET_CHAIN_ID,
+  HASHKEY_TESTNET_CHAIN_ID,
+} from "@/lib/demo-network";
 
 /** Circle 官方 Base Sepolia 测试 USDC（6 decimals）。见 https://developers.circle.com/stablecoins/usdc-contract-addresses */
 export const BASE_SEPOLIA_USDC_ADDRESS =
@@ -28,6 +31,13 @@ export function defaultDemoAssetAddress(chainId: number): `0x${string}` {
       return fromEnv as `0x${string}`;
     }
     return HASHKEY_TESTNET_USDC_DEFAULT;
+  }
+  if (chainId === CONFLUX_ESPACE_TESTNET_CHAIN_ID) {
+    const fromEnv = process.env.NEXT_PUBLIC_USDC_CONTRACT?.trim();
+    if (fromEnv && /^0x[a-fA-F0-9]{40}$/i.test(fromEnv)) {
+      return fromEnv as `0x${string}`;
+    }
+    return "0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca";
   }
   return ANVIL_DEFAULT_MOCK_ERC20_ADDRESS;
 }

@@ -3,12 +3,14 @@ import "dotenv/config";
 import {
   createPublicClient,
   createWalletClient,
+  decodeEventLog,
   getAddress,
   http,
   parseAbi,
   parseAbiItem,
   defineChain,
 } from "viem";
+import { format as cfxFormat } from "js-conflux-sdk";
 import { privateKeyToAccount } from "viem/accounts";
 
 const coreOrderVaultAbi = parseAbi([
@@ -53,12 +55,36 @@ async function notifyMapping({ apiBase, coreOrderId, escrowId, mappedTxHash }) {
   }
 }
 
+async function coreRpc(url, method, params = []) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`core rpc ${method} failed status=${res.status} body=${txt}`);
+  }
+  const json = await res.json();
+  if (json.error) {
+    throw new Error(`core rpc ${method} error=${json.error.message ?? JSON.stringify(json.error)}`);
+  }
+  return json.result;
+}
+
+function toEpochHex(value) {
+  return `0x${value.toString(16)}`;
+}
+
 async function main() {
   const coreChainId = Number(env("CORE_CHAIN_ID", "71"));
   const eSpaceChainId = Number(env("ESPACE_CHAIN_ID", "71"));
   const pollMs = Number(env("RELAYER_POLL_MS", "7000"));
   const confirmations = BigInt(env("RELAYER_CONFIRMATIONS", "1"));
+  const baseConfirmations = confirmations > 1n ? confirmations : 2n;
+  let adaptiveConfirmations = baseConfirmations;
   const apiBase = env("PAYFI_API_URL", "http://127.0.0.1:8787");
+  const eSpaceDepositAssetOverride = env("ESPACE_DEPOSIT_ASSET_ADDRESS");
 
   const coreChain = defineChain({
     id: coreChainId,
@@ -77,11 +103,18 @@ async function main() {
     rpcUrls: { default: { http: [env("ESPACE_RPC_URL")] } },
   });
 
-  const coreVaultAddress = getAddress(env("CORE_ORDER_VAULT_ADDRESS"));
+  const coreVaultAddressRaw = envAny(["CORE_ORDER_VAULT_CFX_ADDRESS", "CORE_ORDER_VAULT_ADDRESS"]);
+  if (!coreVaultAddressRaw) {
+    throw new Error("CORE_ORDER_VAULT_CFX_ADDRESS or CORE_ORDER_VAULT_ADDRESS is required");
+  }
+  const coreVaultAddress =
+    coreVaultAddressRaw.startsWith("cfx") || coreVaultAddressRaw.startsWith("CFX")
+      ? coreVaultAddressRaw
+      : getAddress(coreVaultAddressRaw);
   const adapterAddress = getAddress(env("ESPACE_ADAPTER_ADDRESS"));
 
   const account = privateKeyToAccount(parsePk(env("RELAYER_PRIVATE_KEY")));
-  const coreClient = createPublicClient({ chain: coreChain, transport: http(coreChain.rpcUrls.default.http[0]) });
+  const coreRpcUrl = coreChain.rpcUrls.default.http[0];
   const eSpaceClient = createPublicClient({ chain: eSpaceChain, transport: http(eSpaceChain.rpcUrls.default.http[0]) });
   const eSpaceWallet = createWalletClient({
     chain: eSpaceChain,
@@ -89,31 +122,120 @@ async function main() {
     transport: http(eSpaceChain.rpcUrls.default.http[0]),
   });
 
-  let fromBlock = BigInt(env("RELAYER_FROM_BLOCK", "0")) || (await coreClient.getBlockNumber());
+  let fromBlock = BigInt(env("RELAYER_FROM_BLOCK", "0"));
+  if (fromBlock === 0n) {
+    const latestEpochHex = await coreRpc(coreRpcUrl, "cfx_epochNumber", ["latest_mined"]);
+    const latest = BigInt(latestEpochHex);
+    // Cold-start guard: start one epoch behind to avoid missing logs
+    // produced around relayer startup time.
+    fromBlock = latest > 0n ? latest - 1n : 0n;
+  }
   console.log(`[relayer] started at core block ${fromBlock.toString()}`);
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const latest = await coreClient.getBlockNumber();
+    const latest = BigInt(await coreRpc(coreRpcUrl, "cfx_epochNumber", ["latest_mined"]));
     if (latest <= fromBlock) {
       await new Promise((resolve) => setTimeout(resolve, pollMs));
       continue;
     }
 
-    const toBlock = latest - confirmations;
-    if (toBlock <= fromBlock) {
+    // Core public RPC can have brief tip skew across backend nodes.
+    // Use adaptive lag: expand on epoch-window errors, then decay gradually.
+    const effectiveConfirmations = adaptiveConfirmations > 1n ? adaptiveConfirmations : 2n;
+    const toBlock = latest - effectiveConfirmations;
+    if (toBlock < fromBlock + 1n) {
       await new Promise((resolve) => setTimeout(resolve, pollMs));
       continue;
     }
 
-    const logs = await coreClient.getLogs({
-      address: coreVaultAddress,
-      event: coreOrderVaultAbi[0],
-      fromBlock: fromBlock + 1n,
-      toBlock,
-    });
+    const queryFrom = fromBlock + 1n;
+    const queryTo = toBlock;
+    if (queryFrom > queryTo) {
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+      continue;
+    }
 
-    for (const log of logs) {
+    // Revalidate right before `cfx_getLogs`, because Core latest epoch can move
+    // between the previous read and this request window construction.
+    const latestBeforeLogs = BigInt(await coreRpc(coreRpcUrl, "cfx_epochNumber", ["latest_mined"]));
+    const safeToBlock = latestBeforeLogs - effectiveConfirmations;
+    const effectiveTo = safeToBlock < queryTo ? safeToBlock : queryTo;
+    if (effectiveTo < queryFrom) {
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+      continue;
+    }
+
+    const coreVaultFilterAddress =
+      coreVaultAddress.startsWith("cfx") || coreVaultAddress.startsWith("CFX")
+        ? coreVaultAddress
+        : cfxFormat.address(coreVaultAddress, coreChainId);
+    let rawLogs = [];
+    try {
+      rawLogs = await coreRpc(coreRpcUrl, "cfx_getLogs", [
+        {
+          address: coreVaultFilterAddress,
+          fromEpoch: toEpochHex(queryFrom),
+          toEpoch: toEpochHex(effectiveTo),
+          topics: [coreOrderVaultAbi[0].topic],
+        },
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        /Filter has wrong epoch numbers set/i.test(message) ||
+        /Invalid params: expected a numbers with less than largest epoch number/i.test(message) ||
+        /Invalid params.*largest epoch number/i.test(message)
+      ) {
+        if (adaptiveConfirmations < 20n) adaptiveConfirmations += 1n;
+        const m = message.match(/\(from:\s*(\d+),\s*to:\s*(\d+)\)/i);
+        if (m?.[1] && m?.[2]) {
+          const fromErr = BigInt(m[1]);
+          const toErr = BigInt(m[2]);
+          const floor = fromErr < toErr ? fromErr : toErr;
+          fromBlock = floor > 0n ? floor - 1n : 0n;
+        }
+        try {
+          const latestNowHex = await coreRpc(coreRpcUrl, "cfx_epochNumber", ["latest_mined"]);
+          const latestNow = BigInt(latestNowHex);
+          // Self-heal on backend tip skew (multi-RPC backend can return regressed epochs).
+          // Re-anchor scanner to latest-1 to avoid repeated invalid [from,to] windows.
+          const anchored = latestNow > 0n ? latestNow - 1n : 0n;
+          if (anchored < fromBlock) {
+            fromBlock = anchored;
+          }
+        } catch {
+          // ignore refresh failure; keep retry loop alive
+        }
+        console.warn(`[relayer] transient epoch-range error, retrying: ${message}`);
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+        continue;
+      }
+      if (/request rate exceeded|Too many requests/i.test(message)) {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(pollMs, 1500)));
+        continue;
+      }
+      throw error;
+    }
+    if (rawLogs.length > 0) {
+      console.log(
+        `[relayer] scan epochs ${queryFrom.toString()}..${queryTo.toString()} logs=${rawLogs.length}`,
+      );
+    }
+    if (adaptiveConfirmations > baseConfirmations) adaptiveConfirmations -= 1n;
+
+    for (const rawLog of rawLogs) {
+      let args;
+      try {
+        args = decodeEventLog({
+          abi: coreOrderVaultAbi,
+          eventName: "OrderDeposited",
+          data: rawLog.data,
+          topics: rawLog.topics,
+        }).args;
+      } catch {
+        continue;
+      }
       const {
         orderId,
         buyer,
@@ -126,7 +248,7 @@ async function main() {
         durationSeconds,
         agreementHash,
         disputeModule,
-      } = log.args;
+      } = args;
       if (
         orderId === undefined ||
         buyer === undefined ||
@@ -144,6 +266,9 @@ async function main() {
       }
 
       const expiresAt = timestamp + durationSeconds;
+      const mappedAsset = eSpaceDepositAssetOverride
+        ? getAddress(eSpaceDepositAssetOverride)
+        : getAddress(asset);
       try {
         const txHash = await eSpaceWallet.writeContract({
           address: adapterAddress,
@@ -153,7 +278,7 @@ async function main() {
             orderId,
             buyer,
             seller,
-            asset,
+            mappedAsset,
             amount,
             amountPerLesson,
             Number(maxReleases),
@@ -188,11 +313,13 @@ async function main() {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`[relayer] failed order=${orderId.toString()} err=${message}`);
+        console.error(
+          `[relayer] failed order=${orderId.toString()} epochs=${queryFrom.toString()}..${queryTo.toString()} err=${message}`,
+        );
       }
     }
 
-    fromBlock = toBlock;
+    fromBlock = effectiveTo;
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
 }

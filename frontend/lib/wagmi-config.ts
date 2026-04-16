@@ -1,7 +1,10 @@
 import { createConfig, http } from "wagmi";
 import { baseSepolia } from "wagmi/chains";
 import { defineChain } from "viem";
-import { HASHKEY_TESTNET_CHAIN_ID } from "@/lib/demo-network";
+import {
+  CONFLUX_ESPACE_TESTNET_CHAIN_ID,
+  HASHKEY_TESTNET_CHAIN_ID,
+} from "@/lib/demo-network";
 
 const DEFAULT_ANVIL_CHAIN_ID = 31337;
 
@@ -36,6 +39,7 @@ const baseRpc =
 
 const enableBaseSepolia = targetId === baseSepolia.id;
 const enableHashKeyTestnet = targetId === HASHKEY_TESTNET_CHAIN_ID;
+const enableConfluxEspaceTestnet = targetId === CONFLUX_ESPACE_TESTNET_CHAIN_ID;
 
 const hashKeyExplorerBase =
   typeof process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL === "string" &&
@@ -55,10 +59,24 @@ const hashKeyTestnet = defineChain({
   },
 });
 
+const confluxEspaceTestnet = defineChain({
+  id: CONFLUX_ESPACE_TESTNET_CHAIN_ID,
+  name: "Conflux eSpace Testnet",
+  nativeCurrency: { name: "CFX", symbol: "CFX", decimals: 18 },
+  rpcUrls: {
+    default: { http: [targetChainRpc ?? "https://evmtestnet.confluxrpc.com"] },
+  },
+  blockExplorers: {
+    default: { name: "ConfluxScan", url: "https://evmtestnet.confluxscan.org" },
+  },
+});
+
 const chains = enableBaseSepolia
   ? ([anvilChain, baseSepolia] as const)
   : enableHashKeyTestnet
     ? ([hashKeyTestnet] as const)
+    : enableConfluxEspaceTestnet
+      ? ([confluxEspaceTestnet] as const)
     : ([anvilChain] as const);
 
 const transports: Record<number, ReturnType<typeof http>> = {};
@@ -70,6 +88,8 @@ if (enableBaseSepolia) {
   );
 } else if (enableHashKeyTestnet) {
   transports[hashKeyTestnet.id] = http(targetChainRpc ?? "https://testnet.hsk.xyz");
+} else if (enableConfluxEspaceTestnet) {
+  transports[confluxEspaceTestnet.id] = http(targetChainRpc ?? "https://evmtestnet.confluxrpc.com");
 } else {
   transports[anvilChain.id] = http(anvilRpc);
 }
@@ -84,6 +104,8 @@ export const targetChain = enableBaseSepolia
   ? baseSepolia
   : enableHashKeyTestnet
     ? hashKeyTestnet
+    : enableConfluxEspaceTestnet
+      ? confluxEspaceTestnet
     : anvilChain;
 
 export const targetChainId = targetChain.id;

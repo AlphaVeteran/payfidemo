@@ -31,6 +31,7 @@
     "relayer:core-to-espace": "node scripts/relay-core-to-espace.mjs",
     "demo:cross-space": "node scripts/cross-space-demo.mjs",
     "deploy:core-space:vault": "node scripts/deploy-core-order-vault-core-space.mjs",
+    "deploy:core-space:mock-erc20": "node scripts/deploy-mock-erc20-core-space.mjs",
     "db:migrate": "tsx src/db/migrate-cli.ts"
   },
   "engines": {
