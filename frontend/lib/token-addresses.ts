@@ -21,7 +21,18 @@ export const HASHKEY_TESTNET_USDC_DEFAULT =
 export const ANVIL_DEFAULT_MOCK_ERC20_ADDRESS =
   "0x5FbDB2315678afecb367f032d93F642f64180aa3" as const;
 
+const DEFAULT_DEMO_ASSET_SYMBOL = "USDC" as const;
+
+export function demoAssetSymbol(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_DEMO_ASSET_SYMBOL?.trim();
+  return fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_DEMO_ASSET_SYMBOL;
+}
+
 export function defaultDemoAssetAddress(chainId: number): `0x${string}` {
+  const fromDemoAssetEnv = process.env.NEXT_PUBLIC_DEMO_ASSET_ADDRESS?.trim();
+  if (fromDemoAssetEnv && /^0x[a-fA-F0-9]{40}$/i.test(fromDemoAssetEnv)) {
+    return fromDemoAssetEnv as `0x${string}`;
+  }
   if (chainId === baseSepolia.id) {
     return BASE_SEPOLIA_USDC_ADDRESS;
   }
@@ -44,8 +55,17 @@ export function defaultDemoAssetAddress(chainId: number): `0x${string}` {
 
 /** 新建意向表单用的 USDC 小数位：Base Sepolia / HashKey 测试网为 6；Anvil Mock 为 18 */
 export function demoUsdcDecimals(chainId: number): number {
+  const fromDemoAssetEnv = process.env.NEXT_PUBLIC_DEMO_ASSET_DECIMALS?.trim();
+  if (fromDemoAssetEnv && /^\d+$/.test(fromDemoAssetEnv)) {
+    const parsed = Number(fromDemoAssetEnv);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 255) return parsed;
+  }
   if (chainId === baseSepolia.id || chainId === HASHKEY_TESTNET_CHAIN_ID) {
     return BASE_SEPOLIA_USDC_DECIMALS;
   }
   return 18;
+}
+
+export function demoAssetDecimals(chainId: number): number {
+  return demoUsdcDecimals(chainId);
 }

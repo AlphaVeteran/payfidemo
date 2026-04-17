@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import AddHashKeyNetworkButton from "@/components/shared/add-hashkey-network-button";
 import { getPayFiHealth, listIntents, type IntentRecord } from "@/lib/payfi-api";
 import { HASHKEY_TESTNET_CHAIN_ID } from "@/lib/demo-network";
-import { defaultDemoAssetAddress } from "@/lib/token-addresses";
+import { defaultDemoAssetAddress, demoAssetSymbol } from "@/lib/token-addresses";
 import PayFiLogo from "@/components/ui/payfi-logo";
 import { useI18n } from "@/lib/i18n";
 
@@ -65,6 +65,7 @@ export default function RoleEntry() {
   const targetChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID);
   const showHashKeyHomeCards = targetChainId === HASHKEY_TESTNET_CHAIN_ID;
   const hashKeyUsdcAddress = defaultDemoAssetAddress(HASHKEY_TESTNET_CHAIN_ID);
+  const demoAssetTicker = demoAssetSymbol();
   const escrowAddressEnv = process.env.NEXT_PUBLIC_ESCROW_ADDRESS?.trim() ?? "";
   const hashkeyGatewayUrlEnv =
     process.env.NEXT_PUBLIC_HASHKEY_MERCHANT_GATEWAY_URL?.trim() ?? "";
@@ -129,7 +130,7 @@ export default function RoleEntry() {
       persistenceLayerLabel: "持久化层",
       persistenceInMemory: "进程内内存（未连接数据库）",
       persistenceUnreachable: "无法获取（API 不可达）",
-      usdcContractLabel: "USDC代币地址",
+      usdcContractLabel: "演示资产代币地址",
       escrowContractLabel: "托管合约地址",
       hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
       valueUnset: "（当前未配置）",
@@ -144,8 +145,8 @@ export default function RoleEntry() {
       espaceAdapterLabel: "ESpaceEscrowAdapter",
       espaceAdapterNote:
         "Relayer 监听 Core 事件后调用 Adapter 的 createEscrowFromCore，将订单映射为 eSpace escrowId。",
-      espaceMockErc20Label: "演示资产 MockERC20（eSpace）",
-      coreMockErc20Label: "MockERC20（Core · 保证金代币）",
+      espaceMockErc20Label: `${demoAssetTicker}（eSpace）`,
+      coreMockErc20Label: "在岸人民币（Core）",
       viewOnExplorer: "在浏览器中查看",
       walletHintTitle: "钱包连接",
       walletHintBody:
@@ -174,7 +175,7 @@ export default function RoleEntry() {
       persistenceLayerLabel: "持久化層",
       persistenceInMemory: "程序內記憶體（未連線資料庫）",
       persistenceUnreachable: "無法取得（API 無法連線）",
-      usdcContractLabel: "USDC 代幣地址",
+      usdcContractLabel: "演示資產代幣地址",
       escrowContractLabel: "託管合約地址",
       hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
       valueUnset: "（目前未設定）",
@@ -189,8 +190,8 @@ export default function RoleEntry() {
       espaceAdapterLabel: "ESpaceEscrowAdapter",
       espaceAdapterNote:
         "Relayer 監聽 Core 事件後呼叫 Adapter 的 createEscrowFromCore，將訂單映射為 eSpace escrowId。",
-      espaceMockErc20Label: "演示資產 MockERC20（eSpace）",
-      coreMockErc20Label: "MockERC20（Core · 保證金代幣）",
+      espaceMockErc20Label: `${demoAssetTicker}（eSpace）`,
+      coreMockErc20Label: "在岸人民幣（Core）",
       viewOnExplorer: "在瀏覽器中查看",
       walletHintTitle: "錢包連線",
       walletHintBody:
@@ -220,7 +221,7 @@ export default function RoleEntry() {
       persistenceLayerLabel: "Persistence layer",
       persistenceInMemory: "In-memory store (no database)",
       persistenceUnreachable: "Unavailable (API unreachable)",
-      usdcContractLabel: "USDC token address",
+      usdcContractLabel: "Demo asset token address",
       escrowContractLabel: "Escrow contract address",
       hashKeyGatewayLabel: "HashKey Merchant Gateway URL",
       valueUnset: "(not set)",
@@ -235,8 +236,8 @@ export default function RoleEntry() {
       espaceAdapterLabel: "ESpaceEscrowAdapter",
       espaceAdapterNote:
         "After the relayer observes Core events, it calls createEscrowFromCore on the adapter to map orders to an eSpace escrowId.",
-      espaceMockErc20Label: "MockERC20 demo asset (eSpace)",
-      coreMockErc20Label: "MockERC20 (Core · deposit asset)",
+      espaceMockErc20Label: `${demoAssetTicker} (eSpace)`,
+      coreMockErc20Label: "Onshore CNY (Core)",
       viewOnExplorer: "View on explorer",
       walletHintTitle: "Wallets",
       walletHintBody:
@@ -362,7 +363,9 @@ export default function RoleEntry() {
           <h2 className="text-sm font-semibold text-zinc-200">{text.hashKeyCardTitle}</h2>
           <AddHashKeyNetworkButton enabled compact className="payfi-btn-secondary w-full text-xs sm:w-auto" />
           <div className="space-y-1 text-xs">
-            <p className="payfi-label">{text.usdcContractLabel}</p>
+            <p className="payfi-label">
+              {text.usdcContractLabel} ({demoAssetTicker})
+            </p>
             <p className="break-all font-mono text-[11px] text-zinc-400">{hashKeyUsdcAddress}</p>
           </div>
           <div className="space-y-1 text-xs">

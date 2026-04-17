@@ -17,6 +17,7 @@ import { releaseStoreKey, type StoredReleaseState } from "@/lib/release-local-st
 import { targetChainId } from "@/lib/wagmi-config";
 import { useI18n } from "@/lib/i18n";
 import DualSignIntentFacts from "@/components/shared/dual-sign-intent-facts";
+import { demoAssetSymbol } from "@/lib/token-addresses";
 
 type Props = {
   intent: IntentRecord | null;
@@ -26,6 +27,7 @@ type Props = {
 
 export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props) {
   const { locale } = useI18n();
+  const demoAssetTicker = demoAssetSymbol();
   const text = {
     "zh-CN": {
       title: "商家签名（链上托管分期放款）",
@@ -68,7 +70,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       timeUnknown: "—",
       amountsSection: "金额",
       amountUnitUsdc: "USDC",
-      amountUnitMock: "Mock",
+      amountUnitMock: demoAssetTicker,
       refreshContract: "刷新合同",
     },
     "zh-TW": {
@@ -112,7 +114,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       timeUnknown: "—",
       amountsSection: "金額",
       amountUnitUsdc: "USDC",
-      amountUnitMock: "Mock",
+      amountUnitMock: demoAssetTicker,
       refreshContract: "刷新合同",
     },
     en: {
@@ -157,12 +159,12 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       timeUnknown: "—",
       amountsSection: "Amounts",
       amountUnitUsdc: "USDC",
-      amountUnitMock: "Mock",
+      amountUnitMock: demoAssetTicker,
       refreshContract: "Refresh contract",
     },
   }[locale];
 
-  const { address } = useAccount();
+  const { address, connector } = useAccount();
   const chainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const { signTypedDataAsync } = useSignTypedData();
@@ -297,6 +299,22 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     }
   };
 
+  const ensureChainId = async (expectedChainId: number) => {
+    if (chainId !== expectedChainId) {
+      await switchChainAsync({ chainId: expectedChainId });
+    }
+    const provider = await connector?.getProvider?.();
+    if (provider && typeof provider.request === "function") {
+      const raw = await provider.request({ method: "eth_chainId" });
+      const active = Number.parseInt(String(raw), 16);
+      if (Number.isFinite(active) && active !== expectedChainId) {
+        throw new Error(
+          `Wallet active chainId is ${active}, expected ${expectedChainId}. Please switch network in wallet and retry.`,
+        );
+      }
+    }
+  };
+
   const onSignMerchant = async () => {
     if (!intent || !address) {
       setHint(text.notConnected);
@@ -306,7 +324,6 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     setReleaseSubmitCooldown(false);
     setBusy("sign-merchant");
     try {
-      await ensureTargetChain();
       if (getAddress(address) !== getAddress(intent.merchant)) {
         throw new Error(`${text.walletMustBeMerchant} ${intent.merchant}. ${text.switchAccount}`);
       }
@@ -318,6 +335,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         string,
         Array<{ name: string; type: string }>
       >;
+      await ensureChainId(domain.chainId ?? targetChainId);
       const sig = await signTypedDataAsync({
         domain,
         types,

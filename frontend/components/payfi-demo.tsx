@@ -64,7 +64,11 @@ import {
   HASHKEY_TESTNET_CHAIN_ID,
   isPublicUsdcTestnet,
 } from "@/lib/demo-network";
-import { defaultDemoAssetAddress, demoUsdcDecimals } from "@/lib/token-addresses";
+import {
+  defaultDemoAssetAddress,
+  demoAssetDecimals,
+  demoAssetSymbol,
+} from "@/lib/token-addresses";
 
 /** Anvil + Rabby：RPC/链不一致或重启链后，旧 tx 会表现为长时间等不到回执。 */
 async function waitTxReceipt(client: PublicClient, hash: `0x${string}`) {
@@ -95,13 +99,13 @@ function publicTestnetUsdcToIntentAmounts(
   }
   const trimmed = usdcDecimalStr.trim();
   if (!trimmed) {
-    throw new Error("请输入托管总额（USDC）。");
+    throw new Error("请输入托管总额（演示资产）。");
   }
   let total: bigint;
   try {
     total = parseUnits(trimmed, decimals);
   } catch {
-    throw new Error("USDC 金额格式无效（示例：1000 或 0.5）。");
+    throw new Error("金额格式无效（示例：1000 或 0.5）。");
   }
   if (total <= BigInt(0)) {
     throw new Error("托管总额须大于 0。");
@@ -166,14 +170,16 @@ function intentStatusLabel(status: string, loc: "zh-CN" | "zh-TW" | "en") {
   }
 }
 
-/** 公链测试网（Base Sepolia / HashKey Testnet 等）新建意向表单缺省：10 USDC、5 期、1 小时。 */
+/** 公链测试网（Base Sepolia / HashKey Testnet 等）新建意向表单缺省：10 资产单位、5 期、1 小时。 */
 const DEFAULT_ESCROW_USDC_TOTAL = "10";
 const DEFAULT_MAX_RELEASES = "5";
 const DEFAULT_CYCLE_HOURS = "1";
 
 function initialDefaultEscrowUsdc(): string {
-  const v = process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim();
-  return v && v.length > 0 ? v : DEFAULT_ESCROW_USDC_TOTAL;
+  const vAsset = process.env.NEXT_PUBLIC_DEFAULT_ESCROW_ASSET?.trim();
+  if (vAsset && vAsset.length > 0) return vAsset;
+  const vUsdc = process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim();
+  return vUsdc && vUsdc.length > 0 ? vUsdc : DEFAULT_ESCROW_USDC_TOTAL;
 }
 function initialDefaultMaxReleases(): string {
   const v = process.env.NEXT_PUBLIC_DEFAULT_MAX_RELEASES?.trim();
@@ -187,7 +193,7 @@ function initialDefaultCycleHours(): string {
 const defaultCreateBodyStatic = {
   merchant: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
   user: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-  /** Anvil Mock 18 decimals；Base Sepolia 新建时使用用户输入 USDC，不经此默认值 */
+  /** Anvil Mock 18 decimals；Base Sepolia 新建时使用用户输入资产金额，不经此默认值 */
   amountTotal: "1000000000",
   amountPerLesson: "100000000",
   maxReleases: 10,
@@ -221,6 +227,7 @@ function Field({
 export default function PayFiDemo() {
   const { locale } = useI18n();
   const searchParams = useSearchParams();
+  const demoAssetTicker = demoAssetSymbol();
   const text = {
     "zh-CN": {
       userWorkbench: "用户工作台",
@@ -262,12 +269,12 @@ export default function PayFiDemo() {
       nonceDesyncHint:
         "检测到 releaseNonce 不一致：链上状态已变化。已清空旧签名，请点击“查询合同意向”后重新执行 用户签名 -> 商家签名 -> 提交分期放款。",
       baseSepoliaCreateHint:
-        "默认使用 Circle Base Sepolia 测试 USDC（{decimals} decimals）。演示链上托管分期放款：托管总额将均分为「分期期数」笔；「托管周期」对应链上 escrow 到期前可放款/退款的时间窗（秒级精度由小时换算）。商家地址见下方栏（默认与 NEXT_PUBLIC_DEMO_MERCHANT 一致；双签需对应私钥）。",
+        "默认使用 Demo Asset（{symbol}，{decimals} decimals）。演示链上托管分期放款：托管总额将均分为「分期期数」笔；「托管周期」对应链上 escrow 到期前可放款/退款的时间窗（秒级精度由小时换算）。商家地址见下方栏（默认与 NEXT_PUBLIC_DEMO_MERCHANT 一致；双签需对应私钥）。",
       merchantAddressLabel: "商家地址",
       merchantAddressPlaceholder: "0x…（须与链上托管分期放款双签时的商家钱包一致）",
       invalidMerchantAddress: "商家地址无效，请输入有效的以太坊地址（0x + 40 位十六进制）。",
-      usdcAddressLabel: "USDC 合约地址（测试网）",
-      totalEscrowLabel: "托管总额（USDC）",
+      usdcAddressLabel: "演示资产合约地址（测试网）",
+      totalEscrowLabel: `托管总额（${demoAssetTicker}）`,
       totalEscrowPlaceholder: "例如 10 或 100",
       releaseCountLabel: "分期期数（均分总额，须整除）",
       cycleHoursLabel: "托管周期（小时，链上 duration）",
@@ -276,12 +283,12 @@ export default function PayFiDemo() {
       fundingNetworkHint: "（与钱包、页眉一致）",
       fundingPaymentAccountLabel: "合同用户地址（付款钱包须与此一致）",
       fundingMerchantAddressLabel: "商家地址（与意向一致）",
-      fundingDepositAmountLabel: "应付托管总额（与意向约定一致，USDC）",
+      fundingDepositAmountLabel: "应付托管总额（与意向约定一致，演示资产）",
       fundingPrecheckTitle: "链上入金前请确认",
       fundingCheck1: "网络：钱包与页眉所示链一致（错误网络请先切换）。",
       fundingCheck2: "付款身份：当前连接钱包地址 = 下方用户地址（须为创建意向时的用户）。",
       fundingCheck3: "金额：与新建意向时锁定的托管总额一致（不可在本页改数；改金额须新建意向）。",
-      fundingCheck4: "余额：钱包内 USDC ≥ 本笔总额，并预留原生代币作 gas。",
+      fundingCheck4: "余额：钱包内演示资产余额 ≥ 本笔总额，并预留原生代币作 gas。",
       fundingCheck5: "路径：先「授权代币」再「存入托管」；或使用 HashKey 收银台后完成登记。",
       fundingWalletMismatchHint:
         "当前钱包与合同用户地址不一致，请切换钱包后再授权/入金。",
@@ -300,8 +307,8 @@ export default function PayFiDemo() {
       pendingSign: "待签名",
       timeUnknown: "—",
       amountsSection: "金额",
-      amountUnitUsdc: "USDC",
-      amountUnitMock: "Mock",
+      amountUnitUsdc: "演示资产",
+      amountUnitMock: demoAssetTicker,
       refreshContract: "刷新合同",
       expectedMerchant: "合同商家地址",
       releaseProgressLabel: "分期进度",
@@ -435,12 +442,12 @@ export default function PayFiDemo() {
       nonceDesyncHint:
         "偵測到 releaseNonce 不一致：鏈上狀態已變化。已清空舊簽名，請點擊「查詢合同意向」後重新執行 使用者簽名 -> 商家簽名 -> 提交分期放款。",
       baseSepoliaCreateHint:
-        "預設使用 Circle Base Sepolia 測試 USDC（{decimals} decimals）。演示鏈上託管分期放款：託管總額將均分為「分期期數」筆；「託管週期」對應鏈上 escrow 到期前可放款/退款的時間窗（秒級精度由小時換算）。商家地址見下方欄（預設與 NEXT_PUBLIC_DEMO_MERCHANT 一致；雙簽需對應私鑰）。",
+        "預設使用 Demo Asset（{symbol}，{decimals} decimals）。演示鏈上託管分期放款：託管總額將均分為「分期期數」筆；「託管週期」對應鏈上 escrow 到期前可放款/退款的時間窗（秒級精度由小時換算）。商家地址見下方欄（預設與 NEXT_PUBLIC_DEMO_MERCHANT 一致；雙簽需對應私鑰）。",
       merchantAddressLabel: "商家地址",
       merchantAddressPlaceholder: "0x…（須與鏈上託管分期放款雙簽時的商家錢包一致）",
       invalidMerchantAddress: "商家地址無效，請輸入有效的以太坊地址（0x + 40 位十六進位）。",
-      usdcAddressLabel: "USDC 合約地址（測試網）",
-      totalEscrowLabel: "託管總額（USDC）",
+      usdcAddressLabel: "演示資產合約地址（測試網）",
+      totalEscrowLabel: `託管總額（${demoAssetTicker}）`,
       totalEscrowPlaceholder: "例如 10 或 100",
       releaseCountLabel: "分期期數（均分總額，須整除）",
       cycleHoursLabel: "託管週期（小時，鏈上 duration）",
@@ -449,12 +456,12 @@ export default function PayFiDemo() {
       fundingNetworkHint: "（與錢包、頁眉一致）",
       fundingPaymentAccountLabel: "合同使用者地址（付款錢包須與此一致）",
       fundingMerchantAddressLabel: "商家地址（與意向一致）",
-      fundingDepositAmountLabel: "應付託管總額（與意向約定一致，USDC）",
+      fundingDepositAmountLabel: "應付託管總額（與意向約定一致，演示資產）",
       fundingPrecheckTitle: "鏈上入金前請確認",
       fundingCheck1: "網路：錢包與頁眉所示鏈一致（錯誤網路請先切換）。",
       fundingCheck2: "付款身分：目前連接錢包地址 = 下方使用者地址（須為建立意向時的使用者）。",
       fundingCheck3: "金額：與新建意向時鎖定的託管總額一致（不可在本頁改數；改金額須新建意向）。",
-      fundingCheck4: "餘額：錢包內 USDC ≥ 本筆總額，並預留原生代幣作 gas。",
+      fundingCheck4: "餘額：錢包內演示資產餘額 ≥ 本筆總額，並預留原生代幣作 gas。",
       fundingCheck5: "路徑：先「授權代幣」再「存入託管」；或使用 HashKey 收銀台後完成登記。",
       fundingWalletMismatchHint:
         "目前錢包與合同使用者地址不一致，請切換錢包後再授權/入金。",
@@ -473,8 +480,8 @@ export default function PayFiDemo() {
       pendingSign: "待簽名",
       timeUnknown: "—",
       amountsSection: "金額",
-      amountUnitUsdc: "USDC",
-      amountUnitMock: "Mock",
+      amountUnitUsdc: "演示資產",
+      amountUnitMock: demoAssetTicker,
       refreshContract: "刷新合同",
       expectedMerchant: "合同商家地址",
       releaseProgressLabel: "分期進度",
@@ -608,12 +615,12 @@ export default function PayFiDemo() {
       nonceDesyncHint:
         "Detected releaseNonce desync: on-chain state changed. Cleared old signatures. Click Query Contract Intent, then sign as user -> sign as merchant -> submit installment disbursement again.",
       baseSepoliaCreateHint:
-        "On-chain escrow installment disbursement demo. Uses Circle Base Sepolia test USDC ({decimals} decimals). Total escrow is split evenly by installment count. Cycle hours map to on-chain escrow duration. Set merchant below (defaults to NEXT_PUBLIC_DEMO_MERCHANT).",
+        "On-chain escrow installment disbursement demo. Uses Demo Asset ({symbol}, {decimals} decimals). Total escrow is split evenly by installment count. Cycle hours map to on-chain escrow duration. Set merchant below (defaults to NEXT_PUBLIC_DEMO_MERCHANT).",
       merchantAddressLabel: "Merchant address",
       merchantAddressPlaceholder: "0x… (must match the wallet used for dual-sign installment disbursement)",
       invalidMerchantAddress: "Invalid merchant address. Enter a valid Ethereum address (0x + 40 hex chars).",
-      usdcAddressLabel: "USDC contract address (testnet)",
-      totalEscrowLabel: "Total Escrow (USDC)",
+      usdcAddressLabel: "Demo asset contract address (testnet)",
+      totalEscrowLabel: `Total Escrow (${demoAssetTicker})`,
       totalEscrowPlaceholder: "e.g. 10 or 100",
       releaseCountLabel: "Installment count (must divide total evenly)",
       cycleHoursLabel: "Escrow Cycle (hours, on-chain duration)",
@@ -622,12 +629,12 @@ export default function PayFiDemo() {
       fundingNetworkHint: "(must match wallet & header)",
       fundingPaymentAccountLabel: "Intent user address (payer wallet must match)",
       fundingMerchantAddressLabel: "Merchant address (from intent)",
-      fundingDepositAmountLabel: "Escrow total due (as locked on intent, USDC)",
+      fundingDepositAmountLabel: "Escrow total due (as locked on intent, demo asset)",
       fundingPrecheckTitle: "Before on-chain funding, confirm",
       fundingCheck1: "Network: wallet matches the chain shown in the header (switch if needed).",
       fundingCheck2: "Payer: connected wallet address equals the user address below (intent user).",
       fundingCheck3: "Amount: matches the escrow total fixed at intent creation (cannot edit here; create a new intent to change).",
-      fundingCheck4: "Balance: USDC ≥ this total; keep native token for gas.",
+      fundingCheck4: "Balance: demo asset balance >= this total; keep native token for gas.",
       fundingCheck5: "Flow: Approve then Deposit — or use HashKey checkout and register the tx.",
       fundingWalletMismatchHint: "Connected wallet does not match the intent user. Switch accounts.",
       fundingNeedWallet: "Connect your wallet first.",
@@ -645,8 +652,8 @@ export default function PayFiDemo() {
       pendingSign: "Pending",
       timeUnknown: "—",
       amountsSection: "Amounts",
-      amountUnitUsdc: "USDC",
-      amountUnitMock: "Mock",
+      amountUnitUsdc: "Demo Asset",
+      amountUnitMock: demoAssetTicker,
       refreshContract: "Refresh contract",
       expectedMerchant: "Intent merchant",
       releaseProgressLabel: "Installment progress",
@@ -1198,6 +1205,22 @@ export default function PayFiDemo() {
     }
   };
 
+  const ensureChainId = async (expectedChainId: number) => {
+    if (chainId !== expectedChainId) {
+      await switchChainAsync({ chainId: expectedChainId });
+    }
+    const provider = await connector?.getProvider?.();
+    if (provider && typeof provider.request === "function") {
+      const raw = await provider.request({ method: "eth_chainId" });
+      const active = Number.parseInt(String(raw), 16);
+      if (Number.isFinite(active) && active !== expectedChainId) {
+        throw new Error(
+          `Wallet active chainId is ${active}, expected ${expectedChainId}. Please switch network in wallet and retry.`,
+        );
+      }
+    }
+  };
+
   const clearLocalReleaseState = useCallback(
     (id: string) => {
       setUserSig(null);
@@ -1231,7 +1254,7 @@ export default function PayFiDemo() {
           throw new Error(text.releaseCountInvalid);
         }
         const durationSeconds = parseCycleHoursToDurationSeconds(sepoliaCycleHours);
-        const dec = demoUsdcDecimals(targetChainId);
+        const dec = demoAssetDecimals(targetChainId);
         const { amountTotal, amountPerLesson } = publicTestnetUsdcToIntentAmounts(
           sepoliaTotalUsdc,
           maxRel,
@@ -1276,7 +1299,7 @@ export default function PayFiDemo() {
           throw new Error(text.releaseCountInvalid);
         }
         const durationSeconds = parseCycleHoursToDurationSeconds(eSpaceCycleDisplay);
-        const dec = demoUsdcDecimals(targetChainId);
+        const dec = demoAssetDecimals(targetChainId);
         const { amountTotal, amountPerLesson } = publicTestnetUsdcToIntentAmounts(
           eSpaceTotalDisplay,
           maxRel,
@@ -1439,7 +1462,6 @@ export default function PayFiDemo() {
     setReleaseSubmitCooldown(false);
     setBusy("sign-user");
     try {
-      await ensureTargetChain();
       if (getAddress(address) !== getAddress(intent.user)) {
         throw new Error(`${text.walletMustBeUser} ${intent.user}. ${text.switchAccount}`);
       }
@@ -1450,6 +1472,7 @@ export default function PayFiDemo() {
         string,
         Array<{ name: string; type: string }>
       >;
+      await ensureChainId(domain.chainId ?? targetChainId);
       const sig = await signTypedDataAsync({
         domain,
         types,
@@ -1656,7 +1679,7 @@ export default function PayFiDemo() {
   const fundingEscrowAmountDisplay = useMemo(() => {
     if (!intent?.amountTotal?.trim()) return "—";
     try {
-      return formatUnits(BigInt(intent.amountTotal), demoUsdcDecimals(targetChainId));
+      return formatUnits(BigInt(intent.amountTotal), demoAssetDecimals(targetChainId));
     } catch {
       return intent.amountTotal;
     }
@@ -1676,12 +1699,13 @@ export default function PayFiDemo() {
     if (isConfluxCrossSpace) {
       const configured =
         process.env.NEXT_PUBLIC_DEMO_AMOUNT_TOTAL?.trim() ||
+        process.env.NEXT_PUBLIC_DEFAULT_ESCROW_ASSET?.trim() ||
         process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim();
       return configured && configured.length > 0 ? configured : sepoliaTotalUsdc;
     }
     if (intent?.amountTotal?.trim()) {
       try {
-        return formatUnits(BigInt(intent.amountTotal), demoUsdcDecimals(targetChainId));
+        return formatUnits(BigInt(intent.amountTotal), demoAssetDecimals(targetChainId));
       } catch {
         return intent.amountTotal;
       }
@@ -1767,6 +1791,7 @@ export default function PayFiDemo() {
   }, [coreSellerHexDisplay, coreSpaceNetId]);
   const coreDemoTotalDisplay =
     process.env.NEXT_PUBLIC_DEMO_AMOUNT_TOTAL?.trim() ||
+    process.env.NEXT_PUBLIC_DEFAULT_ESCROW_ASSET?.trim() ||
     process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim() ||
     createLockedTotalUsdc ||
     "—";
@@ -1782,6 +1807,7 @@ export default function PayFiDemo() {
     process.env.NEXT_PUBLIC_DEMO_MERCHANT?.trim() || intent?.merchant || createMerchantAddress || "—";
   const eSpaceTotalDisplay =
     process.env.NEXT_PUBLIC_DEMO_AMOUNT_TOTAL?.trim() ||
+    process.env.NEXT_PUBLIC_DEFAULT_ESCROW_ASSET?.trim() ||
     process.env.NEXT_PUBLIC_DEFAULT_ESCROW_USDC?.trim() ||
     createLockedTotalUsdc ||
     "—";
@@ -2081,7 +2107,10 @@ export default function PayFiDemo() {
                   <p className="text-xs leading-relaxed text-zinc-500">
                     {text.baseSepoliaCreateHint.replace(
                       "{decimals}",
-                      String(demoUsdcDecimals(targetChainId)),
+                      String(demoAssetDecimals(targetChainId)),
+                    ).replace(
+                      "{symbol}",
+                      demoAssetTicker,
                     )}
                   </p>
                   <Field label={text.usdcAddressLabel}>
@@ -2548,7 +2577,7 @@ export default function PayFiDemo() {
                 {text.refundAmount}{" "}
                 <span className="font-mono text-zinc-300">
                   {isPublicUsdcTestnet(targetChainId)
-                    ? `${formatUnits(remainingAmount, demoUsdcDecimals(targetChainId))} USDC (${remainingAmount.toString()})`
+                    ? `${formatUnits(remainingAmount, demoAssetDecimals(targetChainId))} ${demoAssetTicker} (${remainingAmount.toString()})`
                     : remainingAmount.toString()}
                 </span>
               </p>

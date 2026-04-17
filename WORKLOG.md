@@ -46,6 +46,34 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-17）
+
+【今日完成】
+- **Demo 资产叙事从固定 USDC 升级为可配置资产**：前端资产配置抽象扩展到 `symbol/address/decimals`，并保持对旧变量兼容回退。
+  - 新增（前端读取）：`NEXT_PUBLIC_DEMO_ASSET_SYMBOL`、`NEXT_PUBLIC_DEMO_ASSET_ADDRESS`、`NEXT_PUBLIC_DEMO_ASSET_DECIMALS`、`NEXT_PUBLIC_DEFAULT_ESCROW_ASSET`。
+  - 兼容回退：未设置新变量时继续使用 `NEXT_PUBLIC_USDC_CONTRACT` 与 `NEXT_PUBLIC_DEFAULT_ESCROW_USDC`。
+- **Conflux 前端环境模板与本地配置对齐 AxCNH 叙事**：
+  - `frontend/.env.local` 与 `frontend/.env.conflux.testnet.example` 已更新为 AxCNH 场景；
+  - 随后按演示需求将默认总额入口改为 `NEXT_PUBLIC_DEMO_AMOUNT_TOTAL=90`，并移除 `.env.local` 中 `NEXT_PUBLIC_DEFAULT_ESCROW_ASSET=700`。
+- **用户工作台文案动态化**（`frontend/components/payfi-demo.tsx`）：
+  - “托管总额”标签改为动态显示 `托管总额（${symbol}）`；
+  - 双签金额单位由固定 `Mock` 改为读取当前资产 symbol，避免 AxCNH 场景仍显示 Mock。
+- **首页 Cross-Space 卡片业务命名更新**（`frontend/components/home/role-entry.tsx`）：
+  - `MockERC20（Core · 保证金代币）` → `在岸人民币（Core）`；
+  - `演示资产 MockERC20（eSpace）` → `${symbol}（eSpace）`（动态读取 symbol）。
+- **商家侧双签金额单位同步**（`frontend/components/merchant/merchant-release-panel.tsx`）：
+  - `amountUnitMock` 改为动态 symbol，保证用户台/商家台展示一致。
+
+【代码证据】
+- 前端配置与资产抽象：`frontend/lib/token-addresses.ts`
+- 用户工作台：`frontend/components/payfi-demo.tsx`
+- 首页：`frontend/components/home/role-entry.tsx`
+- 商家签名区：`frontend/components/merchant/merchant-release-panel.tsx`
+- 环境模板与本地配置：`frontend/.env.local`、`frontend/.env.conflux.testnet.example`、`frontend/.env.base.sepolia.example`、`frontend/.env.hashkey.testnet.example`
+
+【备注】
+- 本次为“配置叙事层”落地：已完成前端显示与配置切换；`USDT0` 对等金额（按人民币汇率换算）尚未接入独立汇率服务与报价时点锁定逻辑。
+
 ## 当日记录（2026-04-16）
 
 【今日完成】
@@ -83,6 +111,7 @@
    - 7.3 演示彩排清单逐项核对。
 2. **测试证据留档**：沉淀每条用例的 `coreOrderId / escrowId / intentId / fundingTxHash` 与关键交易链接，补充到测试记录与 WORKLOG 当日条目。
 3. **回归问题清单收敛**：对仍可能出现的 relayer epoch-range 抖动进行二次观测，确认是否需要固定专有 Core RPC 节点以替代公共 RPC。
+4. **测试案例接入数据库**：将设计文档中的测试案例执行记录接入 Postgres 持久化（至少包含用例编号、执行人、执行时间、结果、证据链接、关联 `intentId/coreOrderId/escrowId/fundingTxHash`），并验证重启后可查询与追踪。
 
 ## 当日记录（2026-04-15）
 

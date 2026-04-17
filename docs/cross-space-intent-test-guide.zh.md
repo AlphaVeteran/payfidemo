@@ -55,22 +55,41 @@
 
 - 网络：Conflux Core Testnet
 - `chainId = 1`
+- RPC：`https://test.confluxrpc.com`
+- 浏览器：`https://testnet.confluxscan.net`
 - 使用 `buyer`、`admin` 等 Core 侧角色账号
 
 ### MetaMask（eSpace）
 
 - 网络：Conflux eSpace Testnet
 - `chainId = 71`
+- Currency Symbol：`CFX`
+- RPC：`https://evmtestnet.confluxrpc.com`
+- 浏览器：`https://evmtestnet.confluxscan.io`
 - 使用 `buyer`、`seller` 等 eSpace 侧角色账号
 
-## 3.2 合约地址核对（示例）
+## 3.2 合约地址核对（当前配置）
 
-请确保配置与当前部署一致（以下为现有示例）：
+请确保配置与当前部署一致：
 
-- `CoreOrderVault`: `0xAe26E03F8C0E7c8B0ACe8dc8B825A498f8925Fdf`
-- `ESpaceEscrowAdapter`: `0x8d7d93043768f863DcCAbD0B9c4189222fFc1d38`
-- `PayFiEscrow`: `0x44898c384Af98dBB3666E0c0dD9dA643547863a6`
-- `MockERC20`: `0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca`
+### Core Space（下单与保证金）
+
+- Chain ID：`1`
+
+| 合约 | 地址 | 浏览器 |
+| --- | --- | --- |
+| CoreOrderVault（下单与保证金） | `cfxtest:acfut40t0f72ftzmd0yucxww2m677jwdg6sez5nmxt` | [在浏览器中查看](https://testnet.confluxscan.net/address/cfxtest:acfut40t0f72ftzmd0yucxww2m677jwdg6sez5nmxt) |
+| MockERC20（Core · 保证金代币） | `cfxtest:acazrp5f7ff2cnj3w669k8up07wbk7j6cpvsn9sjrc` | [在浏览器中查看](https://testnet.confluxscan.net/address/cfxtest:acazrp5f7ff2cnj3w669k8up07wbk7j6cpvsn9sjrc) |
+
+### eSpace（托管执行层）
+
+- Chain ID：`71`
+
+| 合约 | 地址 | 浏览器 |
+| --- | --- | --- |
+| PayFiEscrow | `0x44898c384Af98dBB3666E0c0dD9dA643547863a6` | [在浏览器中查看](https://evmtestnet.confluxscan.io/address/0x44898c384Af98dBB3666E0c0dD9dA643547863a6) |
+| ESpaceEscrowAdapter | `0x8d7d93043768f863DcCAbD0B9c4189222fFc1d38` | [在浏览器中查看](https://evmtestnet.confluxscan.io/address/0x8d7d93043768f863DcCAbD0B9c4189222fFc1d38) |
+| MockERC20（eSpace · 演示资产） | `0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca` | [在浏览器中查看](https://evmtestnet.confluxscan.io/address/0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca) |
 
 ## 3.3 环境变量准备
 
@@ -86,6 +105,48 @@
   - `BUYER_PRIVATE_KEY`
   - `SELLER_ADDRESS`
   - `CORE_DEPOSIT_ASSET_ADDRESS`
+
+### Conflux 专用 Neon（不要与 HashKey 混用）
+
+> 目标：Cross-Space（Conflux）测试仅使用 Conflux 专用数据库，避免串用 HashKey 历史数据。
+
+1. 在 Neon 新建独立库（建议命名：`payfidemo_conflux_testnet`），不要复用 HashKey 的库或连接串。
+2. 将 Conflux 专用连接串写入 `.env.conflux.testnet.private`：
+
+```env
+DATABASE_URL='postgresql://<user>:<password>@<host>/<db>?sslmode=require'
+```
+
+3. 重新切换环境（让 overlay 生效）：
+
+```bash
+bash scripts/switch-env.sh conflux-testnet
+```
+
+4. （可选）清空 Conflux 库历史数据后再回归：
+
+```sql
+BEGIN;
+TRUNCATE TABLE payfi_settlement_outbox;
+TRUNCATE TABLE payfi_core_intent_links;
+TRUNCATE TABLE payfi_intents;
+COMMIT;
+```
+
+5. 执行迁移并验证：
+
+```bash
+npm run db:migrate
+curl -sS http://127.0.0.1:8787/health
+```
+
+`/health` 预期包含：
+
+- `chainId: "71"`
+- `persistence: "postgres"`
+- `databaseProduct: "PostgreSQL"`
+
+若仍显示 `persistence: "memory"`，通常是 API 进程未重启或当前进程未读取到 `DATABASE_URL`。先重启 API，再次验证。
 
 ### 前端（`frontend/.env.local`）
 

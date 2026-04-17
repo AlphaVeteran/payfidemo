@@ -37,10 +37,6 @@ const baseRpc =
     ? process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL
     : "https://sepolia.base.org";
 
-const enableBaseSepolia = targetId === baseSepolia.id;
-const enableHashKeyTestnet = targetId === HASHKEY_TESTNET_CHAIN_ID;
-const enableConfluxEspaceTestnet = targetId === CONFLUX_ESPACE_TESTNET_CHAIN_ID;
-
 const hashKeyExplorerBase =
   typeof process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL === "string" &&
   process.env.NEXT_PUBLIC_BLOCK_EXPLORER_URL.length > 0
@@ -71,28 +67,31 @@ const confluxEspaceTestnet = defineChain({
   },
 });
 
-const chains = enableBaseSepolia
-  ? ([anvilChain, baseSepolia] as const)
-  : enableHashKeyTestnet
-    ? ([hashKeyTestnet] as const)
-    : enableConfluxEspaceTestnet
-      ? ([confluxEspaceTestnet] as const)
-    : ([anvilChain] as const);
+const chains = [anvilChain, baseSepolia, hashKeyTestnet, confluxEspaceTestnet] as const;
 
 const transports: Record<number, ReturnType<typeof http>> = {};
 
-if (enableBaseSepolia) {
-  transports[anvilChain.id] = http(anvilRpc);
-  transports[baseSepolia.id] = http(
-    targetChainRpc ? targetChainRpc : baseRpc,
-  );
-} else if (enableHashKeyTestnet) {
-  transports[hashKeyTestnet.id] = http(targetChainRpc ?? "https://testnet.hsk.xyz");
-} else if (enableConfluxEspaceTestnet) {
-  transports[confluxEspaceTestnet.id] = http(targetChainRpc ?? "https://evmtestnet.confluxrpc.com");
-} else {
-  transports[anvilChain.id] = http(anvilRpc);
-}
+transports[anvilChain.id] = http(anvilRpc);
+transports[baseSepolia.id] = http(
+  targetId === baseSepolia.id && targetChainRpc ? targetChainRpc : baseRpc,
+);
+transports[hashKeyTestnet.id] = http(
+  targetId === hashKeyTestnet.id && targetChainRpc
+    ? targetChainRpc
+    : "https://testnet.hsk.xyz",
+);
+transports[confluxEspaceTestnet.id] = http(
+  targetId === confluxEspaceTestnet.id && targetChainRpc
+    ? targetChainRpc
+    : "https://evmtestnet.confluxrpc.com",
+);
+
+const chainById: Record<number, typeof chains[number]> = {
+  [anvilChain.id]: anvilChain,
+  [baseSepolia.id]: baseSepolia,
+  [hashKeyTestnet.id]: hashKeyTestnet,
+  [confluxEspaceTestnet.id]: confluxEspaceTestnet,
+};
 
 export const wagmiConfig = createConfig({
   chains,
@@ -100,12 +99,6 @@ export const wagmiConfig = createConfig({
   ssr: false,
 });
 
-export const targetChain = enableBaseSepolia
-  ? baseSepolia
-  : enableHashKeyTestnet
-    ? hashKeyTestnet
-    : enableConfluxEspaceTestnet
-      ? confluxEspaceTestnet
-    : anvilChain;
+export const targetChain = chainById[targetId] ?? anvilChain;
 
 export const targetChainId = targetChain.id;
