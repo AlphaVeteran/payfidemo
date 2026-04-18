@@ -5,9 +5,13 @@
 # 本服务 Railway 设置：
 #   - Root Directory: 留空（仓库根）
 #   - Variables：与本地 .env.example 一致（DATABASE_URL、CHAIN_*、ESCROW_ADDRESS、私钥等）
+#
+# 启动说明：使用 `tsx` 直接跑 `src/server.ts`，避免仅配置 `node dist/server.js`
+# 但构建阶段未生成 dist/ 时进程秒退，导致 /health 一直 service unavailable。
 
 [build]
 builder = "RAILPACK"
+buildCommand = "npm run build"
 watchPatterns = [
   "src/**",
   "web/**",
@@ -18,5 +22,5 @@ watchPatterns = [
 ]
 
 [deploy]
-startCommand = "node dist/server.js"
+startCommand = "npx tsx src/server.ts"
 healthcheckPath = "/health"
