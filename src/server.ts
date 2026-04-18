@@ -13,13 +13,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runMigrations } from "./db/migrate.js";
-import {
-  assertDatabaseConnectionString,
-  closePgPool,
-  getDatabaseProductLabel,
-  getPgPool,
-  isPersistenceEnabled,
-} from "./db/pool.js";
+import { closePgPool, getDatabaseProductLabel, getPgPool, isPersistenceEnabled } from "./db/pool.js";
 import intentsRouter from "./routes/intents.js";
 import hashkeyWebhookRouter from "./routes/webhook.js";
 import { intentStore } from "./store/intentStore.js";
@@ -240,8 +234,6 @@ const port = Number(process.env.PORT || 8787);
 const listenHost = "0.0.0.0";
 
 async function main() {
-  assertDatabaseConnectionString();
-
   const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
     const s = app.listen(port, listenHost, () => {
       console.log(`payfidemo listening on http://${listenHost}:${port}`);

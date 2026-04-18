@@ -1,9 +1,15 @@
 # payfidemo — Relayer（Core OrderDeposited → eSpace createEscrowFromCore）
 #
+# ⚠️ 若 Deploy Logs 出现「payfidemo listening」「running Postgres migrations」，
+#    说明本服务误用了「API」的启动方式（npx tsx src/server.ts / 根目录 railway.toml）。
+#    请在 Settings → 删除错误的 Custom Start Command，并把 Config-as-code 指向下面的本文件。
+#
 # 在 Railway 新建「第三个」Service 时：
 #   - 同一 GitHub 仓库、分支与 API 一致
 #   - Root Directory：留空（仓库根）
 #   - Settings → Config-as-code path：填 railway-relayer.toml（或 /railway-relayer.toml）
+#   - Start Command 应为：node scripts/relay-core-to-espace.mjs（本文件 [deploy] 已写）
+#   - 不要给 Relayer 配 DATABASE_URL（不需要；复制 API 变量会把坏连接串带进来）
 #   - Variables：见 .env.conflux.testnet.example 中「relay-core-to-espace」段落
 #
 # 说明：脚本在存在 PORT（Railway 注入）时会监听 /health，供平台健康检查；
