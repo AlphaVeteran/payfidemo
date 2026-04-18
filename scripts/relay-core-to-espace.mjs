@@ -192,15 +192,9 @@ async function main() {
       continue;
     }
 
-    // Revalidate right before `cfx_getLogs`, because Core latest epoch can move
-    // between the previous read and this request window construction.
-    const latestBeforeLogs = BigInt(await coreRpc(coreRpcUrl, "cfx_epochNumber", ["latest_mined"]));
-    const safeToBlock = latestBeforeLogs - effectiveConfirmations;
-    const effectiveTo = safeToBlock < queryTo ? safeToBlock : queryTo;
-    if (effectiveTo < queryFrom) {
-      await new Promise((resolve) => setTimeout(resolve, pollMs));
-      continue;
-    }
+    // 仅使用本轮回「第一次」latest 构造窗口。二次拉 cfx_epochNumber 时公共 RPC 常返回更低 tip，
+    // 使 safeToBlock < queryFrom，从而 cfx_getLogs 报 Filter has wrong epoch numbers (from > to)。
+    const effectiveTo = queryTo;
 
     const coreVaultFilterAddress =
       coreVaultAddress.startsWith("cfx") || coreVaultAddress.startsWith("CFX")
