@@ -69,6 +69,7 @@ import {
   demoAssetDecimals,
   demoAssetSymbol,
 } from "@/lib/token-addresses";
+import { getEip1193Request } from "@/lib/eip1193-provider";
 
 /** Anvil + Rabby：RPC/链不一致或重启链后，旧 tx 会表现为长时间等不到回执。 */
 async function waitTxReceipt(client: PublicClient, hash: `0x${string}`) {
@@ -1209,9 +1210,10 @@ export default function PayFiDemo() {
     if (chainId !== expectedChainId) {
       await switchChainAsync({ chainId: expectedChainId });
     }
-    const provider = await connector?.getProvider?.();
-    if (provider && typeof provider.request === "function") {
-      const raw = await provider.request({ method: "eth_chainId" });
+    const provider: unknown = await connector?.getProvider?.();
+    const request = getEip1193Request(provider);
+    if (request) {
+      const raw = await request({ method: "eth_chainId" });
       const active = Number.parseInt(String(raw), 16);
       if (Number.isFinite(active) && active !== expectedChainId) {
         throw new Error(
@@ -1472,7 +1474,10 @@ export default function PayFiDemo() {
         string,
         Array<{ name: string; type: string }>
       >;
-      await ensureChainId(domain.chainId ?? targetChainId);
+      const rawChain = domain.chainId ?? targetChainId;
+      const expectedChainId =
+        typeof rawChain === "bigint" ? Number(rawChain) : rawChain;
+      await ensureChainId(expectedChainId);
       const sig = await signTypedDataAsync({
         domain,
         types,
@@ -1748,12 +1753,7 @@ export default function PayFiDemo() {
     let cancelled = false;
     (async () => {
       try {
-        const mod = await import("@conflux-dev/conflux-address-js/lib/browser.js");
-        type EncodeFn = (hexAddress: string, netId: number) => string;
-        type ModuleShape = { default?: { encode?: EncodeFn }; encode?: EncodeFn };
-        const shaped = mod as unknown as ModuleShape;
-        const encode: EncodeFn | undefined = shaped.default?.encode ?? shaped.encode;
-        if (!encode) throw new Error("missing encode");
+        const { encode } = await import("@conflux-dev/conflux-address-js");
         const base32 = encode(hex, coreSpaceNetId);
         if (!cancelled) setCoreBuyerCfxBase32Display(base32);
       } catch {
@@ -1773,12 +1773,7 @@ export default function PayFiDemo() {
     let cancelled = false;
     (async () => {
       try {
-        const mod = await import("@conflux-dev/conflux-address-js/lib/browser.js");
-        type EncodeFn = (hexAddress: string, netId: number) => string;
-        type ModuleShape = { default?: { encode?: EncodeFn }; encode?: EncodeFn };
-        const shaped = mod as unknown as ModuleShape;
-        const encode: EncodeFn | undefined = shaped.default?.encode ?? shaped.encode;
-        if (!encode) throw new Error("missing encode");
+        const { encode } = await import("@conflux-dev/conflux-address-js");
         const base32 = encode(hex, coreSpaceNetId);
         if (!cancelled) setCoreSellerCfxBase32Display(base32);
       } catch {

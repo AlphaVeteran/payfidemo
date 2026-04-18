@@ -18,6 +18,7 @@ import { targetChainId } from "@/lib/wagmi-config";
 import { useI18n } from "@/lib/i18n";
 import DualSignIntentFacts from "@/components/shared/dual-sign-intent-facts";
 import { demoAssetSymbol } from "@/lib/token-addresses";
+import { getEip1193Request } from "@/lib/eip1193-provider";
 
 type Props = {
   intent: IntentRecord | null;
@@ -263,7 +264,7 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
       setUserSig(mergedUser);
       setMerchantSig(mergedMerchant);
     })();
-  }, [id, mounted, intent?.userSig, intent?.merchantSig, intent?.releaseNonce, intent?.intentId]);
+  }, [id, mounted, intent]);
 
   useEffect(() => {
     if (!mounted || !id) return;
@@ -293,19 +294,14 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
     }
   }, [mounted, id]);
 
-  const ensureTargetChain = async () => {
-    if (chainId !== targetChainId) {
-      await switchChainAsync({ chainId: targetChainId });
-    }
-  };
-
   const ensureChainId = async (expectedChainId: number) => {
     if (chainId !== expectedChainId) {
       await switchChainAsync({ chainId: expectedChainId });
     }
-    const provider = await connector?.getProvider?.();
-    if (provider && typeof provider.request === "function") {
-      const raw = await provider.request({ method: "eth_chainId" });
+    const provider: unknown = await connector?.getProvider?.();
+    const request = getEip1193Request(provider);
+    if (request) {
+      const raw = await request({ method: "eth_chainId" });
       const active = Number.parseInt(String(raw), 16);
       if (Number.isFinite(active) && active !== expectedChainId) {
         throw new Error(
@@ -335,7 +331,10 @@ export default function MerchantReleasePanel({ intent, onIntentRefresh }: Props)
         string,
         Array<{ name: string; type: string }>
       >;
-      await ensureChainId(domain.chainId ?? targetChainId);
+      const rawChain = domain.chainId ?? targetChainId;
+      const expectedChainId =
+        typeof rawChain === "bigint" ? Number(rawChain) : rawChain;
+      await ensureChainId(expectedChainId);
       const sig = await signTypedDataAsync({
         domain,
         types,

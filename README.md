@@ -52,6 +52,10 @@ This project targets the cross-border e-commerce trust gap:
 - Sellers want payment certainty once milestones are met.
 - Platforms need transparent, auditable settlement policies.
 
+Paying in **RMB** is often hard for buyers: overseas sellers frequently settle in foreign currency; limited direct RMB rails push buyers toward intermediaries with **opaque FX and fees**, **slower settlement**, and **weak alignment** between payment timing and delivery or disputes across jurisdictions.
+
+**Solution pillars:** (1) **Compliance layering** — onshore funds stay onshore; offshore settlement completes on **eSpace**, with onshore intent on **Core**. (2) **No custodial risk** — margin is locked in **contracts**; neither side can unilaterally take funds. (3) **Conflux-native** — **gas sponsorship** lowers user friction; **Core + eSpace** separates onshore/offshore logic by design.
+
 By combining escrow, milestone release, and refund fallback, the demo shows a practical PayFi pattern suitable for cross-border commerce on EVM-compatible infrastructure.
 
 ### Roadmap
@@ -91,7 +95,8 @@ We successfully validated the Phase 1 end-to-end flow from Core-side order depos
 
 ### Hackfest Submission Doc
 
-- Full submission draft: docs/hackfest-2026-submission.md
+- Full submission draft: [docs/hackfest-2026-submission.md](docs/hackfest-2026-submission.md)
+- README to copy into `global-hackfest-2026/projects/<name>/`: [docs/hackfest-2026-projects-readme.md](docs/hackfest-2026-projects-readme.md)
 
 ---
 

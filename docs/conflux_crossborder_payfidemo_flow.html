@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PayFi Demo — 跨链托管支付流程</title>
+<style>
+  :root {
+    --color-text-primary: #1a1a18;
+    --color-text-secondary: #5f5e5a;
+    --color-text-tertiary: #888780;
+    --color-background-primary: #ffffff;
+    --color-background-secondary: #f5f4ef;
+    --color-border-tertiary: rgba(0,0,0,0.12);
+    --font-sans: system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-text-primary: #e8e6dc;
+      --color-text-secondary: #b4b2a9;
+      --color-text-tertiary: #888780;
+      --color-background-primary: #1e1e1c;
+      --color-background-secondary: #2a2a28;
+      --color-border-tertiary: rgba(255,255,255,0.12);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-background-secondary);
+    color: var(--color-text-primary);
+    padding: 2rem;
+    min-height: 100vh;
+  }
+  h1 { font-size: 20px; font-weight: 500; margin-bottom: 0.25rem; color: var(--color-text-primary); }
+  p.sub { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 1.5rem; }
+  .card {
+    background: var(--color-background-primary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 980px;
+    margin: 0 auto;
+  }
+  svg text { font-family: var(--font-sans); }
+  svg .ts { font-size: 12px; font-weight: 400; fill: var(--color-text-secondary); }
+  svg .th { font-size: 14px; font-weight: 500; fill: var(--color-text-primary); }
+  svg .node { cursor: pointer; }
+  svg .node:hover rect { opacity: 0.85; }
+
+  svg .c-blue  rect { fill: #E6F1FB; stroke: #185FA5; }
+  svg .c-blue  .th  { fill: #0C447C; }
+  svg .c-blue  .ts  { fill: #185FA5; }
+  svg .c-teal  rect { fill: #E1F5EE; stroke: #0F6E56; }
+  svg .c-teal  .th  { fill: #085041; }
+  svg .c-teal  .ts  { fill: #0F6E56; }
+  svg .c-amber rect { fill: #FAEEDA; stroke: #BA7517; }
+  svg .c-amber .th  { fill: #633806; }
+  svg .c-amber .ts  { fill: #854F0B; }
+  svg .c-gray  rect { fill: #F1EFE8; stroke: #5F5E5A; }
+  svg .c-gray  .th  { fill: #2C2C2A; }
+  svg .c-gray  .ts  { fill: #5F5E5A; }
+  svg .c-coral rect { fill: #FAECE7; stroke: #993C1D; }
+  svg .c-coral .th  { fill: #712B13; }
+  svg .c-coral .ts  { fill: #993C1D; }
+
+  @media (prefers-color-scheme: dark) {
+    svg .c-blue  rect { fill: #0C447C; stroke: #85B7EB; }
+    svg .c-blue  .th  { fill: #B5D4F4; }
+    svg .c-blue  .ts  { fill: #85B7EB; }
+    svg .c-teal  rect { fill: #085041; stroke: #5DCAA5; }
+    svg .c-teal  .th  { fill: #9FE1CB; }
+    svg .c-teal  .ts  { fill: #5DCAA5; }
+    svg .c-amber rect { fill: #633806; stroke: #EF9F27; }
+    svg .c-amber .th  { fill: #FAC775; }
+    svg .c-amber .ts  { fill: #EF9F27; }
+    svg .c-gray  rect { fill: #444441; stroke: #B4B2A9; }
+    svg .c-gray  .th  { fill: #D3D1C7; }
+    svg .c-gray  .ts  { fill: #B4B2A9; }
+    svg .c-coral rect { fill: #712B13; stroke: #F0997B; }
+    svg .c-coral .th  { fill: #F5C4B3; }
+    svg .c-coral .ts  { fill: #F0997B; }
+  }
+  footer { text-align: center; font-size: 12px; color: var(--color-text-tertiary); margin-top: 1.5rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>PayFi Demo — 跨链托管支付流程</h1>
+  <p class="sub">Conflux Core Space（在岸 CNY）× eSpace（离岸 AxCNH）· 双签托管放款</p>
+
+<svg width="100%" viewBox="0 0 860 725" role="img">
+  <title>PayFi Demo 跨链托管支付流程</title>
+  <desc>买卖双方eSpace约定合同，买家Core Space下单锁金，Relayer监听后触发eSpace创建Escrow、映射入金、双签放款及AxCNH结算；双签与离岸放款之间可迭代多轮</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- Lane backgrounds（中间带加宽；eSpace 列右移） -->
+  <rect x="30"  y="52" width="300" height="615" rx="12" fill="#E6F1FB" opacity="0.18"/>
+  <rect x="500" y="52" width="320" height="615" rx="12" fill="#E1F5EE" opacity="0.18"/>
+
+  <!-- Lane titles -->
+  <text class="th" x="180" y="38" text-anchor="middle" fill="#0C447C">Core Space（在岸 CNY）</text>
+  <text class="ts" x="180" y="50" text-anchor="middle" fill="#185FA5">Chain ID 1 · Fluent Wallet</text>
+  <text class="th" x="660" y="38" text-anchor="middle" fill="#085041">eSpace（离岸 AxCNH）</text>
+  <text class="ts" x="660" y="50" text-anchor="middle" fill="#0F6E56">Chain ID 71 · MetaMask</text>
+
+  <!-- ① 约定跨境合同 — eSpace y=72..128 -->
+  <g class="node c-teal">
+    <rect x="525" y="72" width="240" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="645" y="97"  text-anchor="middle" dominant-baseline="central">① 约定跨境合同</text>
+    <text class="ts" x="645" y="115" text-anchor="middle" dominant-baseline="central">买家 + 卖家 · eSpace 签约</text>
+  </g>
+  <circle cx="525" cy="97" r="9" fill="#1D9E75" opacity="0.9"/>
+  <text x="525" y="97" text-anchor="middle" dominant-baseline="central" font-size="11" fill="white" font-weight="500">1</text>
+
+  <!-- ② 买家下单 — Core y=158..214 -->
+  <g class="node c-blue">
+    <rect x="55" y="158" width="240" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="175" y="183" text-anchor="middle" dominant-baseline="central">② 买家下单 + 锁定保证金</text>
+    <text class="ts" x="175" y="201" text-anchor="middle" dominant-baseline="central">CoreOrderVault · 在岸人民币</text>
+  </g>
+  <circle cx="55" cy="183" r="9" fill="#378ADD" opacity="0.9"/>
+  <text x="55" y="183" text-anchor="middle" dominant-baseline="central" font-size="11" fill="white" font-weight="500">2</text>
+
+  <!-- ③ 创建 Escrow — eSpace y=158..214 (same row as ②) -->
+  <g class="node c-teal">
+    <rect x="525" y="158" width="240" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="645" y="183" text-anchor="middle" dominant-baseline="central">③ 创建 Escrow</text>
+    <text class="ts" x="645" y="201" text-anchor="middle" dominant-baseline="central">ESpaceEscrowAdapter · escrowId</text>
+  </g>
+  <circle cx="525" cy="183" r="9" fill="#1D9E75" opacity="0.9"/>
+  <text x="525" y="183" text-anchor="middle" dominant-baseline="central" font-size="11" fill="white" font-weight="500">3</text>
+
+  <!-- ④ 映射入金 — eSpace y=244..288 -->
+  <g class="node c-teal">
+    <rect x="525" y="244" width="240" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="645" y="266" text-anchor="middle" dominant-baseline="central">④ 映射入金</text>
+  </g>
+  <circle cx="525" cy="266" r="9" fill="#1D9E75" opacity="0.9"/>
+  <text x="525" y="266" text-anchor="middle" dominant-baseline="central" font-size="11" fill="white" font-weight="500">4</text>
+
+  <!-- OrderCreated event — Core y=244..288（与 ④ 映射入金同行） -->
+  <g class="node c-gray">
+    <rect x="55" y="244" width="240" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="175" y="266" text-anchor="middle" dominant-baseline="central">OrderCreated 事件上链</text>
+  </g>
+
+  <!-- Relayer — 收窄宽度，置于加宽的中间带 -->
+  <g class="node c-amber">
+    <rect x="325" y="314" width="150" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="400" y="336" text-anchor="middle" dominant-baseline="central">Relayer</text>
+    <text class="ts" x="400" y="354" text-anchor="middle" dominant-baseline="central">监听 Core 事件</text>
+  </g>
+
+  <!-- ⑤ 双签确认放款 — eSpace y=314..370 -->
+  <g class="node c-teal">
+    <rect x="525" y="314" width="240" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="645" y="339" text-anchor="middle" dominant-baseline="central">⑤ 双签确认放款</text>
+    <text class="ts" x="645" y="357" text-anchor="middle" dominant-baseline="central">PayFiEscrow · 买方 + 卖方签名</text>
+  </g>
+  <circle cx="525" cy="339" r="9" fill="#1D9E75" opacity="0.9"/>
+  <text x="525" y="339" text-anchor="middle" dominant-baseline="central" font-size="11" fill="white" font-weight="500">5</text>
+
+  <!-- ⑥ AxCNH 离岸放款 — eSpace y=400..456 -->
+  <g class="node c-teal">
+    <rect x="525" y="400" width="240" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="645" y="425" text-anchor="middle" dominant-baseline="central">⑥ AxCNH 离岸放款</text>
+    <text class="ts" x="645" y="443" text-anchor="middle" dominant-baseline="central">转至卖方 · eSpace 完成结算</text>
+  </g>
+  <circle cx="525" cy="425" r="9" fill="#1D9E75" opacity="0.9"/>
+  <text x="525" y="425" text-anchor="middle" dominant-baseline="central" font-size="11" fill="white" font-weight="500">6</text>
+
+  <!-- ⑤↔⑥ 之间可迭代多轮（示意弧线） -->
+  <path d="M 768 372 C 798 388 798 412 768 428" fill="none" stroke="#0F6E56" stroke-width="1" stroke-dasharray="4 3" opacity="0.8"/>
+  <text class="ts" x="808" y="402" text-anchor="middle" font-size="10" fill="#0F6E56">⑤↔⑥ 可多轮</text>
+
+  <!-- Divider -->
+  <line x1="40" y1="488" x2="810" y2="488" stroke="#888780" stroke-width="0.5" stroke-dasharray="4 4"/>
+  <text class="ts" x="425" y="502" text-anchor="middle">— 到期 / 纠纷路径 —</text>
+
+  <!-- 超时退回 — Core -->
+  <g class="node c-gray">
+    <rect x="55" y="516" width="240" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="175" y="541" text-anchor="middle" dominant-baseline="central">超时自动退回</text>
+    <text class="ts" x="175" y="559" text-anchor="middle" dominant-baseline="central">保证金退还买家 · Core Space</text>
+  </g>
+
+  <!-- 纠纷 — eSpace -->
+  <g class="node c-coral">
+    <rect x="525" y="516" width="240" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="645" y="541" text-anchor="middle" dominant-baseline="central">纠纷 / 仲裁</text>
+    <text class="ts" x="645" y="559" text-anchor="middle" dominant-baseline="central">多签裁决 · 资金定向释放</text>
+  </g>
+
+  <!-- Contract addresses -->
+  <rect x="40" y="596" width="800" height="118" rx="10" fill="none" stroke="#888780" stroke-width="0.5" stroke-dasharray="5 3"/>
+  <text class="th" x="55" y="614" dominant-baseline="central">已部署合约</text>
+  <text class="ts" x="55"  y="632">CoreOrderVault</text>
+  <text class="ts" x="200" y="632" fill="#888780">cfxtest:acfut40t0f72ftzmd0yucxww2m677jwdg6sez5nmxt</text>
+  <text class="ts" x="55"  y="650">在岸人民币（Core）</text>
+  <text class="ts" x="200" y="650" fill="#888780">cfxtest:acazrp5f7ff2cnj3w669k8up07wbk7j6cpvsn9sjrc</text>
+  <text class="ts" x="55"  y="668">PayFiEscrow</text>
+  <text class="ts" x="200" y="668" fill="#888780">0x44898c384Af98dBB3666E0c0dD9dA643547863a6</text>
+  <text class="ts" x="55"  y="686">ESpaceEscrowAdapter</text>
+  <text class="ts" x="200" y="686" fill="#888780">0x8d7d93043768f863DcCAbD0B9c4189222fFc1d38</text>
+  <text class="ts" x="55"  y="704">AxCNH（eSpace）</text>
+  <text class="ts" x="200" y="704" fill="#888780">0x680E3dbf8fDBb8518969F0d4b1DC4ae9b55685ca</text>
+
+  <!-- ===== ARROWS ===== -->
+
+  <!-- ① 合同 --dashed--> ② 下单 (cross-lane: eSpace row → Core) -->
+  <path d="M525 100 L175 100 L175 155" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+  <!-- ② 下单 → OrderCreated event -->
+  <line x1="175" y1="214" x2="175" y2="241" fill="none" stroke="#378ADD" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- OrderCreated → Relayer -->
+  <path d="M175 288 L175 342 L325 342" fill="none" stroke="#BA7517" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Relayer → ③：先上 (x=475)，再水平向右，箭头落在序号「3」圆标左缘 (cx=525,r=9 → x=516,y=183) -->
+  <path d="M475 342 L475 183 L516 183" fill="none" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ③ 创建 Escrow → ④ 映射入金 -->
+  <line x1="645" y1="214" x2="645" y2="241" fill="none" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ④ 映射入金 → ⑤ 双签 (down) -->
+  <line x1="645" y1="288" x2="645" y2="311" fill="none" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ⑤ 双签 → ⑥ AxCNH（与 ⑥ 之间可按业务多轮迭代，见右侧弧线） -->
+  <line x1="645" y1="370" x2="645" y2="397" fill="none" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ⑥ AxCNH --dashed--> 超时退回 (left side, Core lane) -->
+  <path d="M175 400 L175 513" fill="none" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+  <!-- ⑥ AxCNH --dashed--> 纠纷 (straight down) -->
+  <path d="M645 456 L645 513" fill="none" stroke="#D85A30" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+
+</svg>
+
+</div>
+<footer>PayFi Demo · Conflux Hackfest 2026 · github.com/AlphaVeteran/payfidemo</footer>
+</body>
+</html>

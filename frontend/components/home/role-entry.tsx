@@ -58,6 +58,26 @@ function getFluentInjectedProvider(win: Window & { conflux?: MinimalEip1193 }): 
   return null;
 }
 
+function looksLikeCfxBase32(addr: string): boolean {
+  const t = addr.trim().toLowerCase();
+  return t.startsWith("cfx:") || t.startsWith("cfxtest:");
+}
+
+/** Fluent Core 的 wallet_watchAsset 通常要求 cfx/cfxtest 地址；仅传 0x 易触发 -32602 InvalidParams。 */
+async function resolveFluentCoreTokenWatchAddress(
+  hex020: string,
+  rawDisplay: string,
+  envCfx: string,
+  netId: number,
+): Promise<string> {
+  const display = rawDisplay.trim();
+  if (looksLikeCfxBase32(display)) return display;
+  const fromEnv = envCfx.trim();
+  if (looksLikeCfxBase32(fromEnv)) return fromEnv;
+  const { encode } = await import("@conflux-dev/conflux-address-js");
+  return encode(hex020, netId);
+}
+
 export default function RoleEntry() {
   const { locale } = useI18n();
   const router = useRouter();
@@ -157,6 +177,7 @@ export default function RoleEntry() {
       addTokenNeedWallet: "未检测到 Fluent 扩展，已在新标签页打开安装页，安装后请刷新本页再试。",
       addTokenNeedHex:
         "当前为 Core 的 cfxtest 地址。请在 frontend/.env.local 增加 NEXT_PUBLIC_CORE_MOCK_ERC20_HEX_ADDRESS=0x... 后重试。",
+      addTokenConnectRejected: "已在 Fluent 中取消连接。请先同意连接本站，再添加代币。",
     },
     "zh-TW": {
       subtitle: "選擇角色進入流程，或在下方最近記錄中開啟已有意向。",
@@ -202,6 +223,7 @@ export default function RoleEntry() {
       addTokenNeedWallet: "未偵測到 Fluent 擴充，已在新分頁開啟安裝頁，安裝後請重新整理本頁再試。",
       addTokenNeedHex:
         "目前是 Core 的 cfxtest 位址。請在 frontend/.env.local 增加 NEXT_PUBLIC_CORE_MOCK_ERC20_HEX_ADDRESS=0x... 後重試。",
+      addTokenConnectRejected: "已在 Fluent 中取消連線。請先同意連線本站，再新增代幣。",
     },
     en: {
       subtitle:
@@ -249,6 +271,8 @@ export default function RoleEntry() {
         "Fluent extension not found. Opened the install page in a new tab — install, refresh, and try again.",
       addTokenNeedHex:
         "Current address is Core cfxtest format. Set NEXT_PUBLIC_CORE_MOCK_ERC20_HEX_ADDRESS=0x... in frontend/.env.local and retry.",
+      addTokenConnectRejected:
+        "Connection was rejected in Fluent. Approve connecting this site, then try adding the token again.",
     },
   }[locale];
   const [role, setRole] = useState<Role>("user");
@@ -330,20 +354,45 @@ export default function RoleEntry() {
     }
     setCoreTokenAddBusy(true);
     try {
+      // Fluent runs wallet_validateAppPermissions before wallet_watchAsset; without a prior
+      // authorized session this returns 4100 Unauthorized. Connect first (user gesture).
+      await fluent.request({ method: "cfx_requestAccounts" });
+      const netId = Number(process.env.NEXT_PUBLIC_CORESPACE_CHAIN_ID ?? "1");
+      const watchAddress = await resolveFluentCoreTokenWatchAddress(
+        hexAddress,
+        coreMockErc20Display,
+        coreMockErc20Env,
+        netId,
+      );
+      const tokenSymbol = process.env.NEXT_PUBLIC_CORE_MOCK_ERC20_SYMBOL?.trim() || "MOCK";
+      let tokenDecimals = Number(process.env.NEXT_PUBLIC_CORE_MOCK_ERC20_DECIMALS ?? "18");
+      if (!Number.isFinite(tokenDecimals)) tokenDecimals = 18;
       await fluent.request({
         method: "wallet_watchAsset",
         params: {
           type: "ERC20",
-          options: { address: hexAddress, symbol: "MOCK", decimals: 18 },
+          options: {
+            address: watchAddress,
+            symbol: tokenSymbol,
+            decimals: tokenDecimals,
+          },
         },
       });
       setCoreTokenAddMsg(text.addTokenDone);
     } catch (e) {
-      setCoreTokenAddErr(e instanceof Error ? e.message : String(e));
+      const code =
+        e && typeof e === "object" && "code" in e && typeof (e as { code: unknown }).code === "number"
+          ? (e as { code: number }).code
+          : undefined;
+      if (code === 4001) {
+        setCoreTokenAddErr(text.addTokenConnectRejected);
+      } else {
+        setCoreTokenAddErr(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setCoreTokenAddBusy(false);
     }
-  }, [coreMockErc20Display, coreMockErc20HexEnv, text]);
+  }, [coreMockErc20Display, coreMockErc20Env, coreMockErc20HexEnv, text]);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-lg flex-col gap-8 px-4 pb-12 pt-8 sm:max-w-xl sm:px-6">

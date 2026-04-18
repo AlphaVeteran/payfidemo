@@ -211,7 +211,7 @@ export default function MerchantConsole() {
   }[locale];
   }, [locale]);
   const [tab, setTab] = useState<TabKey>("intents");
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [intents, setIntents] = useState<IntentRecord[]>([]);
   const [intentListPage, setIntentListPage] = useState(1);

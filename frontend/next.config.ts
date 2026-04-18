@@ -10,6 +10,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  */
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, ".."),
+  /** Pure-JS build; main `index.js` pulls `cip37` → optional `@conflux-dev/conflux-address-rust`. */
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@conflux-dev/conflux-address-js": path.join(
+        __dirname,
+        "node_modules/@conflux-dev/conflux-address-js/lib/browser.js",
+      ),
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
