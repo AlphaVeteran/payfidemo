@@ -230,33 +230,38 @@ app.use((_req, res) => {
 });
 
 const port = Number(process.env.PORT || 8787);
+/** Railway / Docker：必须监听 0.0.0.0，否则健康检查可能一直 “service unavailable”。 */
+const listenHost = "0.0.0.0";
 
 async function main() {
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
+    const s = app.listen(port, listenHost, () => {
+      console.log(`payfidemo listening on http://${listenHost}:${port}`);
+      console.log(`health: http://127.0.0.1:${port}/health`);
+      console.log(`intents: http://127.0.0.1:${port}${API}/intents`);
+      resolve(s);
+    });
+    s.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(
+          `[payfidemo] Port ${port} is already in use. Stop the other listener, e.g.:\n` +
+            `  lsof -nP -iTCP:${port} -sTCP:LISTEN\n` +
+            `  kill $(lsof -ti :${port})\n` +
+            `Or run with a different port: PORT=8788 npm run dev`,
+        );
+      } else {
+        console.error("[payfidemo] listen error:", err);
+      }
+      reject(err);
+    });
+  });
+
   const pool = getPgPool();
   if (pool) {
+    console.log("[payfidemo] running Postgres migrations...");
     await runMigrations(pool);
     console.log("[payfidemo] Postgres persistence enabled (DATABASE_URL)");
   }
-
-  const server = app.listen(port, () => {
-    console.log(`payfidemo listening on http://127.0.0.1:${port}`);
-    console.log(`health: http://127.0.0.1:${port}/health`);
-    console.log(`intents: http://127.0.0.1:${port}${API}/intents`);
-  });
-  server.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE") {
-      console.error(
-        `[payfidemo] Port ${port} is already in use. Stop the other listener, e.g.:\n` +
-          `  lsof -nP -iTCP:${port} -sTCP:LISTEN\n` +
-          `  kill $(lsof -ti :${port})\n` +
-          `Or run with a different port: PORT=8788 npm run dev`,
-      );
-    } else {
-      console.error("[payfidemo] listen error:", err);
-    }
-    void closePgPool();
-    process.exit(1);
-  });
 
   const shutdown = () => {
     server.close(() => {
