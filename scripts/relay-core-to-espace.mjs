@@ -176,32 +176,17 @@ async function main() {
       continue;
     }
 
-    // Core public RPC can have brief tip skew across backend nodes.
-    // Use adaptive lag: expand on epoch-window errors, then decay gradually.
+    // Core public RPC 对多 epoch 的 cfx_getLogs 窗口极易报「from > to」或误导性 Filter error。
+    // 每次只查询「一个」已确认 epoch：fromEpoch === toEpoch === fromBlock+1。
     const effectiveConfirmations = adaptiveConfirmations > 1n ? adaptiveConfirmations : 2n;
-    const toBlock = latest - effectiveConfirmations;
-    if (toBlock < fromBlock + 1n) {
-      await new Promise((resolve) => setTimeout(resolve, pollMs));
-      continue;
-    }
-
     const queryFrom = fromBlock + 1n;
-    const queryTo = toBlock;
-    if (queryFrom > queryTo) {
+    const maxConfirmedEpoch = latest - effectiveConfirmations;
+    if (queryFrom > maxConfirmedEpoch) {
       await new Promise((resolve) => setTimeout(resolve, pollMs));
       continue;
     }
 
-    // 仅使用本轮回「第一次」latest 构造窗口（见上文）。
-    const effectiveTo = queryTo;
-
-    if (queryFrom > effectiveTo) {
-      console.warn(
-        `[relayer] skip: would call cfx_getLogs with fromEpoch>toEpoch queryFrom=${queryFrom.toString()} effectiveTo=${effectiveTo.toString()} fromBlock=${fromBlock.toString()} latest=${latest.toString()} lag=${effectiveConfirmations.toString()}`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, pollMs));
-      continue;
-    }
+    const effectiveTo = queryFrom;
 
     const coreVaultFilterAddress =
       coreVaultAddress.startsWith("cfx") || coreVaultAddress.startsWith("CFX")
@@ -258,9 +243,7 @@ async function main() {
       throw error;
     }
     if (rawLogs.length > 0) {
-      console.log(
-        `[relayer] scan epochs ${queryFrom.toString()}..${queryTo.toString()} logs=${rawLogs.length}`,
-      );
+      console.log(`[relayer] scan epoch ${queryFrom.toString()} logs=${rawLogs.length}`);
     }
     if (adaptiveConfirmations > baseConfirmations) adaptiveConfirmations -= 1n;
 
@@ -354,7 +337,7 @@ async function main() {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
-          `[relayer] failed order=${orderId.toString()} epochs=${queryFrom.toString()}..${queryTo.toString()} err=${message}`,
+          `[relayer] failed order=${orderId.toString()} epoch=${queryFrom.toString()} err=${message}`,
         );
       }
     }
