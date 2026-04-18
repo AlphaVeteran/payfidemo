@@ -1,0 +1,23 @@
+# payfidemo — Relayer（Core OrderDeposited → eSpace createEscrowFromCore）
+#
+# 在 Railway 新建「第三个」Service 时：
+#   - 同一 GitHub 仓库、分支与 API 一致
+#   - Root Directory：留空（仓库根）
+#   - Settings → Config-as-code path：填 railway-relayer.toml（或 /railway-relayer.toml）
+#   - Variables：见 .env.conflux.testnet.example 中「relay-core-to-espace」段落
+#
+# 说明：脚本在存在 PORT（Railway 注入）时会监听 /health，供平台健康检查；
+# 与根目录 railway.toml（API）互不冲突，勿混用同一配置文件。
+
+[build]
+builder = "RAILPACK"
+watchPatterns = [
+  "scripts/relay-core-to-espace.mjs",
+  "package.json",
+  "package-lock.json",
+  "railway-relayer.toml",
+]
+
+[deploy]
+startCommand = "node scripts/relay-core-to-espace.mjs"
+healthcheckPath = "/health"

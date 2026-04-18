@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import "dotenv/config";
+import { createServer } from "node:http";
 import {
   createPublicClient,
   createWalletClient,
@@ -76,8 +77,43 @@ function toEpochHex(value) {
   return `0x${value.toString(16)}`;
 }
 
+/** Railway 等 PaaS 会探测 HTTP；Relayer 无 Web 框架，仅在设置了 PORT 时挂一个 /health。本地不设 PORT 则不监听。 */
+function listenRailwayHealthServer() {
+  const raw = process.env.PORT?.trim();
+  if (!raw) return Promise.resolve();
+  const port = Number(raw);
+  if (!Number.isFinite(port) || port <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const server = createServer((req, res) => {
+      const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+      if (pathname === "/health" || pathname === "/") {
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ ok: true, service: "payfidemo-relayer" }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    server.on("error", reject);
+    server.listen(port, "0.0.0.0", () => {
+      console.log(`[relayer] health http://0.0.0.0:${port}/health`);
+      resolve();
+    });
+  });
+}
+
 async function main() {
-  const coreChainId = Number(env("CORE_CHAIN_ID", "71"));
+  await listenRailwayHealthServer();
+
+  if (!envAny(["CORE_RPC_URL", "CORESPACE_RPC_URL"])) {
+    throw new Error("CORE_RPC_URL (or CORESPACE_RPC_URL) is required");
+  }
+  if (!env("ESPACE_RPC_URL")) {
+    throw new Error("ESPACE_RPC_URL is required");
+  }
+
+  /** Conflux Core Testnet 为 1（勿与 eSpace 71 混淆）；未设置时默认 1。 */
+  const coreChainId = Number(env("CORE_CHAIN_ID", "1"));
   const eSpaceChainId = Number(env("ESPACE_CHAIN_ID", "71"));
   const pollMs = Number(env("RELAYER_POLL_MS", "7000"));
   const confirmations = BigInt(env("RELAYER_CONFIRMATIONS", "1"));
