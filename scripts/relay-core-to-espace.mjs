@@ -192,9 +192,16 @@ async function main() {
       continue;
     }
 
-    // 仅使用本轮回「第一次」latest 构造窗口。二次拉 cfx_epochNumber 时公共 RPC 常返回更低 tip，
-    // 使 safeToBlock < queryFrom，从而 cfx_getLogs 报 Filter has wrong epoch numbers (from > to)。
+    // 仅使用本轮回「第一次」latest 构造窗口（见上文）。
     const effectiveTo = queryTo;
+
+    if (queryFrom > effectiveTo) {
+      console.warn(
+        `[relayer] skip: would call cfx_getLogs with fromEpoch>toEpoch queryFrom=${queryFrom.toString()} effectiveTo=${effectiveTo.toString()} fromBlock=${fromBlock.toString()} latest=${latest.toString()} lag=${effectiveConfirmations.toString()}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+      continue;
+    }
 
     const coreVaultFilterAddress =
       coreVaultAddress.startsWith("cfx") || coreVaultAddress.startsWith("CFX")
@@ -222,8 +229,11 @@ async function main() {
         if (m?.[1] && m?.[2]) {
           const fromErr = BigInt(m[1]);
           const toErr = BigInt(m[2]);
-          const floor = fromErr < toErr ? fromErr : toErr;
-          fromBlock = floor > 0n ? floor - 1n : 0n;
+          // 仅当 RPC 报告的区间方向正常时，才用 floor 回退 fromBlock；from>to 时乱改会加剧抖动。
+          if (fromErr <= toErr) {
+            const floor = fromErr;
+            fromBlock = floor > 0n ? floor - 1n : 0n;
+          }
         }
         try {
           const latestNowHex = await coreRpc(coreRpcUrl, "cfx_epochNumber", ["latest_mined"]);
