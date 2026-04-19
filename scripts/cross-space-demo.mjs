@@ -118,7 +118,13 @@ async function main() {
       : getAddress(coreAssetAddressRaw);
   const sellerAddress = getAddress(env("SELLER_ADDRESS"));
   const adapterAddress = getAddress(env("ESPACE_ADAPTER_ADDRESS"));
-  const apiBase = env("PAYFI_API_URL", "http://127.0.0.1:8787");
+  /** Railway/Docker 用 PORT（常见 8080）；未设则本地 8787。Relayer 回调须与之一致（见 PAYFI_API_URL）。 */
+  const portRaw = process.env.PORT?.trim();
+  const defaultLocalApi =
+    portRaw && /^\d+$/.test(portRaw) ? `http://127.0.0.1:${portRaw}` : "http://127.0.0.1:8787";
+  const payFiOverride = process.env.PAYFI_API_URL?.trim();
+  const apiBase = payFiOverride || defaultLocalApi;
+  console.log(`[demo] apiBase=${apiBase} (set PAYFI_API_URL for public URL when Relayer is off-box)`);
 
   const orderIdRaw = env("DEMO_ORDER_ID");
   const orderId = BigInt(orderIdRaw || Date.now().toString());
