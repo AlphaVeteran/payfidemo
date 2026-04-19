@@ -142,6 +142,16 @@ function parseCycleHoursToDurationSeconds(hoursStr: string): number {
 
 const USER_WB_INTENTS_PAGE_SIZE = 5;
 
+/** 须大于 API `CROSS_SPACE_DEMO_TIMEOUT_MS`（常见 660000～1800000）。可用 NEXT_PUBLIC_CROSS_SPACE_DEMO_CLIENT_POLL_MAX_MS 覆盖（毫秒）。 */
+function crossSpaceDemoClientPollMaxMs(): number {
+  const raw = process.env.NEXT_PUBLIC_CROSS_SPACE_DEMO_CLIENT_POLL_MAX_MS?.trim();
+  if (raw) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 300_000) return n;
+  }
+  return 2_100_000;
+}
+
 /** 最新在前；缺 createdAt 时退化为 intentId 字典序倒序 */
 function sortIntentsNewestFirst(list: IntentRecord[]): IntentRecord[] {
   return [...list].sort((a, b) => {
@@ -402,6 +412,8 @@ export default function PayFiDemo() {
       coreDepositBusy: "处理中…",
       coreDepositDone: "已触发 Core demo，下方状态会自动刷新。",
       coreDepositNeedDebug: "后端未开启调试接口（请设置 PAYFIDEMO_DEBUG=true 并重启 API）。",
+      crossSpacePollTimeout:
+        "cross-space demo 等待后端任务超时（已超过 {minutes} 分钟）。请检查 Relayer 是否运行、Relayer 的 PAYFI_API_URL 是否指向本 API、Core/eSpace RPC 与 DEMO_WAIT_MS；必要时在前端设置 NEXT_PUBLIC_CROSS_SPACE_DEMO_CLIENT_POLL_MAX_MS（毫秒）或查看 API 子进程日志。",
       stepStatusPending: "待完成",
       stepStatusDone: "已完成",
     },
@@ -577,6 +589,8 @@ export default function PayFiDemo() {
       coreDepositBusy: "處理中…",
       coreDepositDone: "已觸發 Core demo，下方狀態會自動更新。",
       coreDepositNeedDebug: "後端未開啟除錯接口（請設定 PAYFIDEMO_DEBUG=true 並重啟 API）。",
+      crossSpacePollTimeout:
+        "cross-space demo 等待後端任務逾時（已超過 {minutes} 分鐘）。請檢查 Relayer 是否執行、Relayer 的 PAYFI_API_URL 是否指向此 API、Core/eSpace RPC 與 DEMO_WAIT_MS；必要時於前端設定 NEXT_PUBLIC_CROSS_SPACE_DEMO_CLIENT_POLL_MAX_MS（毫秒）或查看 API 子行程日誌。",
       stepStatusPending: "待完成",
       stepStatusDone: "已完成",
     },
@@ -755,6 +769,8 @@ export default function PayFiDemo() {
       coreDepositBusy: "Processing…",
       coreDepositDone: "Core demo triggered. Status below will refresh automatically.",
       coreDepositNeedDebug: "Debug endpoint is disabled (set PAYFIDEMO_DEBUG=true and restart API).",
+      crossSpacePollTimeout:
+        "Timed out waiting for the cross-space demo task (>{minutes} min). Check Relayer is running, PAYFI_API_URL points to this API, Core/eSpace RPC and DEMO_WAIT_MS; optionally set NEXT_PUBLIC_CROSS_SPACE_DEMO_CLIENT_POLL_MAX_MS (ms) or read API subprocess logs.",
       stepStatusPending: "Pending",
       stepStatusDone: "Done",
     },
@@ -1031,22 +1047,26 @@ export default function PayFiDemo() {
     }
   }, []);
 
-  const waitCrossSpaceDemoResult = useCallback(async (taskId: string) => {
-    const start = Date.now();
-    /** Must exceed API `CROSS_SPACE_DEMO_TIMEOUT_MS` (often 660000–900000+) so the UI shows server failure, not this message. */
-    while (Date.now() - start < 1_200_000) {
-      const snap = await getCrossSpaceDemoTask(taskId);
-      if (snap.status === "running") {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        continue;
+  const waitCrossSpaceDemoResult = useCallback(
+    async (taskId: string) => {
+      const start = Date.now();
+      const pollMaxMs = crossSpaceDemoClientPollMaxMs();
+      while (Date.now() - start < pollMaxMs) {
+        const snap = await getCrossSpaceDemoTask(taskId);
+        if (snap.status === "running") {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+        if (snap.status === "failed") {
+          throw new Error(snap.error || "cross-space demo failed");
+        }
+        return snap;
       }
-      if (snap.status === "failed") {
-        throw new Error(snap.error || "cross-space demo failed");
-      }
-      return snap;
-    }
-    throw new Error("cross-space demo status polling timed out");
-  }, []);
+      const minutes = Math.max(1, Math.round(pollMaxMs / 60_000));
+      throw new Error(text.crossSpacePollTimeout.replace("{minutes}", String(minutes)));
+    },
+    [text],
+  );
 
   const onRunCoreDemo = useCallback(async () => {
     setCoreDemoMsg(null);
