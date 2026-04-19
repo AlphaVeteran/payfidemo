@@ -21,6 +21,10 @@ const coreOrderVaultAbi = parseAbi([
 const adapterAbi = parseAbi([
   "function createEscrowFromCore(uint256 coreOrderId, address buyer, address seller, address asset, uint128 amountTotal, uint128 amountPerLesson, uint16 maxReleases, uint64 expiresAt, bytes32 agreementHash, address disputeModule) returns (uint256 escrowId)",
 ]);
+const adapterViewAbi = parseAbi([
+  "function processedOrderId(uint256 coreOrderId) view returns (bool)",
+  "function escrowIdByCoreOrderId(uint256 coreOrderId) view returns (uint256)",
+]);
 const coreOrderMappedEvent = parseAbiItem(
   "event CoreOrderMapped(uint256 indexed coreOrderId, uint256 indexed escrowId)",
 );
@@ -293,46 +297,71 @@ async function main() {
         ? getAddress(eSpaceDepositAssetOverride)
         : getAddress(asset);
       try {
-        const txHash = await eSpaceWallet.writeContract({
+        /** Adapter reverts "processed" if this Core order was already mapped — e.g. relayer restart rescanning old epochs. */
+        const alreadyDone = await eSpaceClient.readContract({
           address: adapterAddress,
-          abi: adapterAbi,
-          functionName: "createEscrowFromCore",
-          args: [
-            orderId,
-            buyer,
-            seller,
-            mappedAsset,
-            amount,
-            amountPerLesson,
-            Number(maxReleases),
-            expiresAt,
-            agreementHash,
-            getAddress(disputeModule),
-          ],
+          abi: adapterViewAbi,
+          functionName: "processedOrderId",
+          args: [orderId],
         });
-        console.log(`[relayer] mapped coreOrder=${orderId.toString()} tx=${txHash}`);
-        const receipt = await eSpaceClient.waitForTransactionReceipt({ hash: txHash });
-        let escrowId;
-        try {
-          const logs = await eSpaceClient.getLogs({
+        if (alreadyDone) {
+          const knownEscrowId = await eSpaceClient.readContract({
             address: adapterAddress,
-            event: coreOrderMappedEvent,
-            fromBlock: receipt.blockNumber,
-            toBlock: receipt.blockNumber,
-            args: { coreOrderId: orderId },
+            abi: adapterViewAbi,
+            functionName: "escrowIdByCoreOrderId",
+            args: [orderId],
           });
-          escrowId = logs[0]?.args?.escrowId?.toString();
-        } catch {
-          // best effort: callback can still include just tx hash
-        }
-        if (escrowId) {
           await notifyMapping({
             apiBase,
             coreOrderId: orderId.toString(),
-            escrowId,
-            mappedTxHash: txHash,
+            escrowId: knownEscrowId.toString(),
+            mappedTxHash: undefined,
           });
-          console.log(`[relayer] linked coreOrder=${orderId.toString()} escrowId=${escrowId}`);
+          console.log(
+            `[relayer] already processed coreOrder=${orderId.toString()} escrowId=${knownEscrowId.toString()} — notified API (skip on-chain tx)`,
+          );
+        } else {
+          const txHash = await eSpaceWallet.writeContract({
+            address: adapterAddress,
+            abi: adapterAbi,
+            functionName: "createEscrowFromCore",
+            args: [
+              orderId,
+              buyer,
+              seller,
+              mappedAsset,
+              amount,
+              amountPerLesson,
+              Number(maxReleases),
+              expiresAt,
+              agreementHash,
+              getAddress(disputeModule),
+            ],
+          });
+          console.log(`[relayer] mapped coreOrder=${orderId.toString()} tx=${txHash}`);
+          const receipt = await eSpaceClient.waitForTransactionReceipt({ hash: txHash });
+          let escrowId;
+          try {
+            const logs = await eSpaceClient.getLogs({
+              address: adapterAddress,
+              event: coreOrderMappedEvent,
+              fromBlock: receipt.blockNumber,
+              toBlock: receipt.blockNumber,
+              args: { coreOrderId: orderId },
+            });
+            escrowId = logs[0]?.args?.escrowId?.toString();
+          } catch {
+            // best effort: callback can still include just tx hash
+          }
+          if (escrowId) {
+            await notifyMapping({
+              apiBase,
+              coreOrderId: orderId.toString(),
+              escrowId,
+              mappedTxHash: txHash,
+            });
+            console.log(`[relayer] linked coreOrder=${orderId.toString()} escrowId=${escrowId}`);
+          }
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

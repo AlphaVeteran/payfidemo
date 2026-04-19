@@ -306,6 +306,24 @@ stateDiagram-v2
 - 当前单向规则：
   1. `onCreate` 成功后，进入 Step3（链上入金）；
   2. `onAutoMapAndFundDemo` 成功后，进入 Step4（分期放款），不回 Step2。
+- **自动映射并入金（方案 A，已实现）**：若 Step3 当前已加载 **`awaiting_funding`** 的意向，则 **`onAutoMapAndFundDemo` 复用该 `intentId` 调用自动入金**，不再额外 `onCreate`，避免同一演示路径出现两条业务意向。仅当页面上无待入金意向时，才在自动流程内新建意向后再入金。
+
+### 7.5 规划：intent 与 Core 订单强绑定（方案 C，未实现）
+
+**背景**：当前 `cross-space-demo` 子进程使用的 **`DEMO_ORDER_ID`**（或默认 `Date.now()`）与前端 **`POST /intents`** 生成的 **`intentId`** 在链路与数据模型上**弱关联**——业务侧靠「入金成功后 `funding/tx` 按 `escrowId` 回写 `intentId`」对齐，而非下单前锁定同一业务键。
+
+**目标（方案 C）**：
+
+1. **触发 cross-space demo 时传入当前 `intentId`**（或专用请求体），由 API 在 `spawn` 前从 **`intentStore` 读取该意向**，将 **`amountTotal` / `amountPerLesson` / `maxReleases` / `durationSeconds` / `agreementHash`** 等注入子进程环境，与链上托管参数一致。
+2. **`coreOrderId` 生成策略**（择一或组合，需评审）：  
+   - 由 **`intentId` 派生**可放入 `uint256` 的确定性数值（需注意碰撞与可读性）；或  
+   - 仍用时间戳/自增，但在 **`POST /intents` 创建时即写入**「预留 Core orderId」字段，demo 脚本只消费该字段。
+3. **Relayer 回调** `POST .../core-links/mapped` 时携带 **`intentId`**（若尚未支持则扩展 body），使 **`payfi_core_intent_links`** 在映射写入阶段即具备 **`intent_id`**，减少「仅 escrow 侧有映射、intent 侧晚绑定」的窗口期。
+4. **服务端**：扩展 `POST /api/payfi/v1/debug/cross-space/demo`（或等价路由）接受 **`intentId`**，校验 `PAYFIDEMO_DEBUG`、意向存在且状态允许后再启动 `scripts/cross-space-demo.mjs`。
+
+**依赖与风险**：需与现有 **`DEMO_*` 环境变量**、Railway 多服务部署、以及 Core 上 **orderId 唯一性**策略对齐；改动触及 `server.ts`、intent 类型与迁移（若新增列）、`cross-space-demo.mjs`、文档与 E2E 测试。
+
+**验收建议（未来实现时）**：同一 `intentId` 走完「Core 下单 → 映射 → eSpace 入金」后，`GET .../core-links/by-intent/:intentId` 在入金前后均具备一致可查的 `coreOrderId` / `escrowId`，且链上 Core **`orderId`** 与后端记录可追溯对应。
 
 ---
 

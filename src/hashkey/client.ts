@@ -104,11 +104,39 @@ export function appendIntentIdToRedirectUrl(redirectUrl: string, intentId: strin
   return u.toString();
 }
 
+/** True when env has everything `createReusableOrder` needs (Conflux-only deploys can omit HashKey). */
+export function isHashKeyReusableOrderConfigured(): boolean {
+  if (!process.env.HASHKEY_BASE_URL?.trim()) return false;
+  if (!process.env.APP_KEY?.trim()) return false;
+  if (!process.env.APP_SECRET?.trim()) return false;
+  const redirectFixed = process.env.HASHKEY_REDIRECT_URL?.trim();
+  const baseUrlForRedirect = process.env.BASE_URL?.trim() ?? "";
+  if (!redirectFixed && !baseUrlForRedirect) return false;
+  const usdc = process.env.USDC_CONTRACT?.trim();
+  const escrow = process.env.ESCROW_ADDRESS?.trim();
+  const network =
+    process.env.HASHKEY_CART_NETWORK?.trim() || process.env.CHAIN_NETWORK?.trim();
+  const chainId = Number(process.env.CHAIN_ID);
+  const merchantName = process.env.MERCHANT_NAME?.trim();
+  if (!usdc || !escrow || !network || !Number.isFinite(chainId) || !merchantName) return false;
+  return true;
+}
+
 export async function createReusableOrder(input: {
   intentId: string;
   merchant: string;
   amountTotal: string;
 }) {
+  /** Conflux-only API 部署常不配 HashKey；早退可避免抛错及 `[HashKey] createReusableOrder failed` 日志（亦兼容未更新 intents 路由的旧镜像）。 */
+  if (!isHashKeyReusableOrderConfigured()) {
+    return {
+      paymentUrl: "",
+      paymentRequestId: "",
+      cartMandateId: undefined,
+      raw: undefined,
+    };
+  }
+
   const baseUrl = process.env.HASHKEY_BASE_URL?.trim();
   const appKey = process.env.APP_KEY?.trim();
   const appSecret = process.env.APP_SECRET?.trim();

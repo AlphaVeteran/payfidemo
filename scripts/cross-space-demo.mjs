@@ -61,9 +61,22 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Avoid infinite hang when Core RPC never returns a receipt (dropped tx, wrong network). */
+async function waitCoreReceipt(coreClient, txHash, label, maxWaitMs) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const receipt = await coreClient.cfx.getTransactionReceipt(txHash);
+    if (receipt) return receipt;
+    await sleep(1500);
+  }
+  throw new Error(
+    `${label}: timeout waiting for Core receipt after ${maxWaitMs}ms (tx=${txHash}). Check CORE_RPC_URL / BUYER balance / tx on explorer.`,
+  );
+}
+
 async function main() {
   const coreChain = defineChain({
-    id: Number(env("CORE_CHAIN_ID", "71")),
+    id: Number(env("CORE_CHAIN_ID", "1")),
     name: "conflux-core",
     nativeCurrency: { name: "CFX", symbol: "CFX", decimals: 18 },
     rpcUrls: {
@@ -126,6 +139,8 @@ async function main() {
     })
     .allowance(coreBuyer.address, coreVaultAddress)
     .call();
+  const coreReceiptMaxMs = Number(env("CORE_RECEIPT_MAX_WAIT_MS", "180000"));
+
   const allowanceValue = BigInt(allowance.toString());
   if (allowanceValue < amountTotal) {
     const approveTx = await coreClient
@@ -135,18 +150,18 @@ async function main() {
       })
       .approve(coreVaultAddress, amountTotal)
       .sendTransaction({ from: coreBuyer.address });
-    let approveReceipt = null;
-    while (!approveReceipt) {
-      approveReceipt = await coreClient.cfx.getTransactionReceipt(approveTx);
-      if (!approveReceipt) await sleep(1500);
-    }
+    const approveReceipt = await waitCoreReceipt(
+      coreClient,
+      approveTx,
+      "approve",
+      coreReceiptMaxMs,
+    );
     if (approveReceipt.outcomeStatus !== 0) {
       throw new Error(`approve failed outcomeStatus=${approveReceipt.outcomeStatus}`);
     }
     console.log(`[demo] approved core vault tx=${approveTx}`);
   }
 
-  const fromBlock = await eSpaceClient.getBlockNumber();
   const placeTx = await coreClient
     .Contract({
       address: coreVaultAddress.toLowerCase(),
@@ -164,29 +179,41 @@ async function main() {
       disputeModule,
     )
     .sendTransaction({ from: coreBuyer.address });
-  let placeReceipt = null;
-  while (!placeReceipt) {
-    placeReceipt = await coreClient.cfx.getTransactionReceipt(placeTx);
-    if (!placeReceipt) await sleep(1500);
-  }
+  const placeReceipt = await waitCoreReceipt(coreClient, placeTx, "placeOrderDeposit", coreReceiptMaxMs);
   if (placeReceipt.outcomeStatus !== 0) {
     throw new Error(`placeOrderDeposit failed outcomeStatus=${placeReceipt.outcomeStatus}`);
   }
   console.log(`[demo] core order placed orderId=${orderId.toString()} tx=${placeTx}`);
 
-  const maxWaitMs = Number(env("DEMO_WAIT_MS", "120000"));
+  /**
+   * Anchor after Core deposit — not before. A `fromBlock` captured before `placeOrderDeposit`
+   * makes `fromBlock..latest` span tens of thousands of eSpace blocks while Core txs confirm;
+   * public RPCs often return empty `eth_getLogs` for oversized ranges, so the demo times out
+   * even when relayer already emitted `CoreOrderMapped`.
+   */
+  const fromBlock = await eSpaceClient.getBlockNumber();
+  console.log(`[demo] eSpace log scan starts at block ${fromBlock} (after Core deposit)`);
+
+  /** Relayer + eSpace RPC lag on testnet often exceeds 2m; keep below server CROSS_SPACE_DEMO_TIMEOUT_MS. */
+  const maxWaitMs = Number(env("DEMO_WAIT_MS", "240000"));
   const pollMs = Number(env("DEMO_POLL_MS", "5000"));
   const deadline = Date.now() + maxWaitMs;
   let lastApiLinked = null;
 
   while (Date.now() < deadline) {
-    const logs = await eSpaceClient.getLogs({
-      address: adapterAddress,
-      event: adapterAbi[0],
-      fromBlock,
-      toBlock: "latest",
-      args: { coreOrderId: orderId },
-    });
+    let logs = [];
+    try {
+      logs = await eSpaceClient.getLogs({
+        address: adapterAddress,
+        event: adapterAbi[0],
+        fromBlock,
+        toBlock: "latest",
+        args: { coreOrderId: orderId },
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[demo] getLogs error (will retry): ${msg}`);
+    }
     if (logs.length > 0) {
       const latest = logs[logs.length - 1];
       console.log(

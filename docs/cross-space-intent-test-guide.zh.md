@@ -498,6 +498,16 @@ npm run relayer:core-to-espace
 - relayer 无映射日志  
   - 现象：`demo:cross-space` 超时等待 `CoreOrderMapped`  
   - 处理：检查 relayer 是否在运行、Adapter 地址与私钥是否匹配、RPC 是否可用；Core 端点请使用支持 `cfx_*` 的 RPC（如 `https://test.confluxrpc.com`）。
+- relayer 报 `processed` / `createEscrowFromCore` 回退  
+  - 现象：日志中出现 `revert: processed` 或 viem 提示该调用因 `processed` 失败；同时 **`cross-space demo` 长时间轮询后报 `cross-space demo status polling timed out`**（或后端子进程等映射超时）。  
+  - 原因：`ESpaceEscrowAdapter` 对每个 **`coreOrderId` 只允许映射一次**（`processedOrderId[coreOrderId]`）。Relayer **重启后从较早 epoch 重扫**、或同一笔 Core `OrderDeposited` 被处理两次时，第二次链上会按设计回退，**不会产生新的 `CoreOrderMapped`**；若此时也未向后端补写映射，demo 会一直等。  
+  - 处理：  
+    1. 使用当前仓库的 `scripts/relay-core-to-espace.mjs`：对已处理的订单先 **`readContract(processedOrderId)`**，若已为真则读 **`escrowIdByCoreOrderId`** 并 **`POST /api/payfi/v1/intents/core-links/mapped`** 补关联，**不再重复发** `createEscrowFromCore`。  
+    2. 新开一轮演示时，在 API 环境更新 **`DEMO_ORDER_ID`**（或留空以使用时间戳），避免与链上已存在的订单号冲突。  
+    3. 确认 Relayer 的 **`PAYFI_API_URL`** 与创建 intent / 跑 demo 的 API 一致，否则回调写错实例。  
+- 浏览器 / Scan 已能看到映射交易，但 demo 仍报超时  
+  - 原因：旧版 `cross-space-demo.mjs` 在 **Core 入金前** 就固定了 eSpace `fromBlock`，`eth_getLogs` 查询跨度过大时，公共 RPC 常返回空结果，即使链上已有 `CoreOrderMapped`。  
+  - 处理：使用当前仓库脚本（入金**之后**再锚定 `fromBlock`）；若仍失败，看终端是否出现 `[demo] getLogs error` 并换 `ESPACE_RPC_URL` 重试。
 - relayer 启动即报 RPC method 不存在  
   - 现象：`eth_blockNumber does not exist / is not available`  
   - 处理：拉取最新代码并确认 `scripts/relay-core-to-espace.mjs` 已切换到 Core `cfx_*` 调用（若本地有旧缓存进程，请先重启 relayer）。
@@ -528,7 +538,7 @@ npm run relayer:core-to-espace
 
 当前已实现完整打通：
 
-1. Relayer 在 `createEscrowFromCore` 成功后，读取 `CoreOrderMapped` 事件获得 `escrowId`；
+1. Relayer 在 `createEscrowFromCore` 成功后，读取 `CoreOrderMapped` 事件获得 `escrowId`；若该 `coreOrderId` 已在链上处理过（`processedOrderId` 为真），则不再重复发交易，仅根据 `escrowIdByCoreOrderId` 回调后端补写映射；
 2. Relayer 回调后端接口 `POST /api/payfi/v1/intents/core-links/mapped` 写入
   `coreOrderId -> escrowId`；
 3. 用户意向完成入金并拿到 `escrowId` 时，后端自动补齐

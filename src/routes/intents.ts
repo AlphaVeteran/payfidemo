@@ -32,6 +32,7 @@ import { parseEscrowCreatedFromReceipt } from "../chain/funding.js";
 import {
   collectFlowIdsFromPaymentPayload,
   createReusableOrder,
+  isHashKeyReusableOrderConfigured,
   normalizeMaybeTxHash,
   queryMerchantPayments,
   resolveGatewayTxForReconciliation,
@@ -143,38 +144,44 @@ router.post("/", async (req, res) => {
     await settlementAdapter.emit("INTENT_CREATED", createdEmitPayload);
   }
   let hashkey: { ok: boolean; reason?: string; raw?: unknown } = { ok: false };
-  try {
-    const hsk = await createReusableOrder({
-      intentId: record.intentId,
-      merchant: record.merchant,
-      amountTotal: record.amountTotal,
-    });
-    if (hsk.paymentUrl) {
-      record.paymentUrl = hsk.paymentUrl;
-    }
-    if (hsk.paymentRequestId) {
-      record.hskPaymentReqId = hsk.paymentRequestId;
-    }
-    if (hsk.cartMandateId) {
-      record.hskCartMandateId = hsk.cartMandateId;
-    }
-    if (record.paymentUrl) {
-      hashkey = { ok: true };
-    } else {
+  if (!isHashKeyReusableOrderConfigured()) {
+    hashkey = { ok: false, reason: "HashKey not configured (optional)" };
+  } else {
+    try {
+      const hsk = await createReusableOrder({
+        intentId: record.intentId,
+        merchant: record.merchant,
+        amountTotal: record.amountTotal,
+      });
+      if (hsk.paymentUrl) {
+        record.paymentUrl = hsk.paymentUrl;
+      }
+      if (hsk.paymentRequestId) {
+        record.hskPaymentReqId = hsk.paymentRequestId;
+      }
+      if (hsk.cartMandateId) {
+        record.hskCartMandateId = hsk.cartMandateId;
+      }
+      if (record.paymentUrl) {
+        hashkey = { ok: true };
+      } else if (!isHashKeyReusableOrderConfigured()) {
+        hashkey = { ok: false, reason: "HashKey not configured (optional)" };
+      } else {
+        hashkey = {
+          ok: false,
+          reason: "HashKey returned no payment_url",
+          raw: hsk.raw,
+        };
+        console.warn("[HashKey] reusable order ok but missing payment_url", hsk.raw);
+      }
+      await intentStore.saveIntent(record);
+    } catch (e) {
+      console.error("[HashKey] createReusableOrder failed:", e);
       hashkey = {
         ok: false,
-        reason: "HashKey returned no payment_url",
-        raw: hsk.raw,
+        reason: e instanceof Error ? e.message : String(e),
       };
-      console.warn("[HashKey] reusable order ok but missing payment_url", hsk.raw);
     }
-    await intentStore.saveIntent(record);
-  } catch (e) {
-    console.error("[HashKey] createReusableOrder failed:", e);
-    hashkey = {
-      ok: false,
-      reason: e instanceof Error ? e.message : String(e),
-    };
   }
 
   res.status(201).json({
@@ -246,7 +253,18 @@ router.get("/core-links/by-intent/:intentId", async (req, res) => {
     res.status(400).json({ error: "invalid intentId" });
     return;
   }
-  const link = await coreIntentLinkStore.getByIntentId(intentId);
+  let link = await coreIntentLinkStore.getByIntentId(intentId);
+  /** Relayer 先写入 core↔escrow 时往往没有 intentId；入金确认后才 upsert intent_id。若该行未写入，可用 intent.escrowId 反查。 */
+  if (!link) {
+    const row = await intentStore.getIntent(intentId);
+    const escrowId = row?.escrowId?.trim();
+    if (escrowId) {
+      const byEscrow = await coreIntentLinkStore.getByEscrowId(escrowId);
+      if (byEscrow) {
+        link = { ...byEscrow, intentId };
+      }
+    }
+  }
   if (!link) {
     res.status(404).json({ error: "not found" });
     return;

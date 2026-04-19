@@ -388,6 +388,8 @@ export default function PayFiDemo() {
       autoMapFundBtn: "自动完成映射并入金（Demo）",
       autoMapFundBusy: "自动处理中…",
       autoMapFundDone: "已完成映射并自动入金，已跳转到下一步。",
+      autoMapFundHint:
+        "若本页已有「待支付」合同意向，将直接使用该 intentId 完成入金，不会重复新建；若无，则先新建再自动入金。",
       autoFlowSummaryTitle: "自动流程摘要",
       autoFlowIntentId: "intentId",
       autoFlowCoreOrderId: "coreOrderId",
@@ -561,6 +563,8 @@ export default function PayFiDemo() {
       autoMapFundBtn: "自動完成映射並入金（Demo）",
       autoMapFundBusy: "自動處理中…",
       autoMapFundDone: "已完成映射並自動入金，已跳轉到下一步。",
+      autoMapFundHint:
+        "若本頁已有「待支付」合約意向，將直接使用該 intentId 完成入金，不會重複新建；若無，則先新建再自動入金。",
       autoFlowSummaryTitle: "自動流程摘要",
       autoFlowIntentId: "intentId",
       autoFlowCoreOrderId: "coreOrderId",
@@ -737,6 +741,8 @@ export default function PayFiDemo() {
       autoMapFundBtn: "Auto map + fund (Demo)",
       autoMapFundBusy: "Auto processing…",
       autoMapFundDone: "Mapping and auto-funding completed. Moved to next step.",
+      autoMapFundHint:
+        "If this page already has an intent awaiting funding, that intentId is reused for auto-funding (no duplicate intent). Otherwise a new intent is created first.",
       autoFlowSummaryTitle: "Auto flow summary",
       autoFlowIntentId: "intentId",
       autoFlowCoreOrderId: "coreOrderId",
@@ -1027,7 +1033,8 @@ export default function PayFiDemo() {
 
   const waitCrossSpaceDemoResult = useCallback(async (taskId: string) => {
     const start = Date.now();
-    while (Date.now() - start < 190_000) {
+    /** Must exceed API `CROSS_SPACE_DEMO_TIMEOUT_MS` (often 660000–900000+) so the UI shows server failure, not this message. */
+    while (Date.now() - start < 1_200_000) {
       const snap = await getCrossSpaceDemoTask(taskId);
       if (snap.status === "running") {
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -1104,19 +1111,32 @@ export default function PayFiDemo() {
           coreOrderId: orderIdMatch?.[1] ?? prev?.coreOrderId ?? "—",
           escrowId: mappedMatch?.[1] ?? prev?.escrowId ?? "—",
           mappedTxHash: mappedMatch?.[2] ?? prev?.mappedTxHash,
-          intentId: prev?.intentId,
+          intentId: prev?.intentId ?? intent?.intentId,
           createdAt: prev?.createdAt ?? now,
           updatedAt: now,
         }));
       }
-      const id = await onCreate();
-      if (!id) throw new Error("create intent failed");
-      const funded = await autoFundIntentDemo(id);
+      /** 优先复用当前页已加载、待入金的意向，避免与「新建意图」重复再建一条 intent（方案 A）。 */
+      let fundIntentId: string;
+      if (intent?.intentId?.trim() && intent.status === "awaiting_funding") {
+        fundIntentId = intent.intentId.trim();
+      } else {
+        const created = await onCreate();
+        if (!created) throw new Error("create intent failed");
+        fundIntentId = created;
+      }
+      const funded = await autoFundIntentDemo(fundIntentId);
       setAutoFlowFundingTxHash(funded.fundingTxHash ?? null);
       setCoreDemoMsg(text.autoMapFundDone);
-      const row = await getIntent(id);
+      const row = await getIntent(fundIntentId);
       setIntent(row);
-      setIntentId(id);
+      setIntentId(fundIntentId);
+      if (crossSpaceEnabled) {
+        const link = row.escrowId
+          ? await getCoreIntentLinkByEscrowId(row.escrowId).catch(() => null)
+          : await getCoreIntentLinkByIntentId(fundIntentId).catch(() => null);
+        if (link) setCoreIntentLink(link);
+      }
       // Single-direction rule: after auto map+fund succeeds, always continue to release step.
       applyWizardTransition("auto_flow_done");
       void reloadUserWorkbenchIntents();
@@ -2283,6 +2303,9 @@ export default function PayFiDemo() {
                   <span className="font-mono">{eSpaceCycleDisplay}</span>
                 </p>
               </div>
+              {isConfluxCrossSpace ? (
+                <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">{text.autoMapFundHint}</p>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {isConfluxCrossSpace && (
                   <button

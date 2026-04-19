@@ -61,7 +61,16 @@ function appendBounded(prev: string, chunk: string): string {
 }
 
 function runCrossSpaceDemoInBackground(task: CrossSpaceDemoTask): void {
-  const timeoutMs = Number(process.env.CROSS_SPACE_DEMO_TIMEOUT_MS || "180000");
+  /** Must exceed cross-space-demo worst case: two Core receipts + DEMO_WAIT_MS (see scripts/cross-space-demo.mjs). */
+  const envRaw = Number(process.env.CROSS_SPACE_DEMO_TIMEOUT_MS || "660000");
+  const requested = Number.isFinite(envRaw) && envRaw > 0 ? envRaw : 660000;
+  /** Avoid mistaking CORE_RECEIPT_MAX_WAIT_MS (often 180000) for this value — full demo needs ≥ ~11m headroom. */
+  const timeoutMs = Math.max(requested, 660000);
+  if (requested < 660000) {
+    console.warn(
+      `[payfidemo] CROSS_SPACE_DEMO_TIMEOUT_MS=${requested} is below minimum 660000; using ${timeoutMs}ms`,
+    );
+  }
   const child = spawn("node", [crossSpaceDemoScriptPath], {
     cwd: repoRootDir,
     env: process.env,
