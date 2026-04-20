@@ -121,6 +121,29 @@ function publicTestnetUsdcToIntentAmounts(
   return { amountTotal: total.toString(), amountPerLesson: per.toString() };
 }
 
+async function ensureAssetDecimalsMatch(
+  client: PublicClient | undefined,
+  asset: `0x${string}`,
+  configuredDecimals: number,
+): Promise<number> {
+  if (!client) {
+    throw new Error("Wallet RPC client is not ready. Please reconnect wallet and retry.");
+  }
+  const onChainDecimals = Number(
+    await client.readContract({
+      address: asset,
+      abi: erc20Abi,
+      functionName: "decimals",
+    }),
+  );
+  if (onChainDecimals !== configuredDecimals) {
+    throw new Error(
+      `Token decimals mismatch: configured=${configuredDecimals}, on-chain=${onChainDecimals} (asset ${asset}). Please update NEXT_PUBLIC_DEMO_ASSET_DECIMALS or choose the correct token.`,
+    );
+  }
+  return onChainDecimals;
+}
+
 function parseCycleHoursToDurationSeconds(hoursStr: string): number {
   const trimmed = hoursStr.trim();
   if (!trimmed) {
@@ -1311,6 +1334,7 @@ export default function PayFiDemo() {
                   ? getAddress(assetTrim as `0x${string}`)
                   : getAddress(defaultDemoAssetAddress(targetChainId));
               })();
+        const onChainDecimals = await ensureAssetDecimalsMatch(publicClient, asset, dec);
         let merchantResolved: `0x${string}`;
         try {
           merchantResolved = getAddress(createMerchantAddress.trim() as `0x${string}`);
@@ -1326,6 +1350,7 @@ export default function PayFiDemo() {
           amountPerLesson,
           maxReleases: maxRel,
           durationSeconds,
+          assetDecimals: onChainDecimals,
         };
       } else if (isConfluxCrossSpace) {
         if (!effectiveAddress) {
@@ -1347,6 +1372,8 @@ export default function PayFiDemo() {
           maxRel,
           dec,
         );
+        const asset = getAddress(defaultDemoAssetAddress(targetChainId));
+        const onChainDecimals = await ensureAssetDecimalsMatch(publicClient, asset, dec);
         let merchantResolved: `0x${string}`;
         try {
           merchantResolved = getAddress(eSpaceMerchantDisplay as `0x${string}`);
@@ -1356,13 +1383,14 @@ export default function PayFiDemo() {
         const userResolved = getAddress(effectiveAddress as `0x${string}`);
         body = {
           ...body,
-          asset: getAddress(defaultDemoAssetAddress(targetChainId)),
+          asset,
           user: userResolved,
           merchant: merchantResolved,
           amountTotal,
           amountPerLesson,
           maxReleases: maxRel,
           durationSeconds,
+          assetDecimals: onChainDecimals,
         };
       }
       const { intentId: id } = await createIntent(body);

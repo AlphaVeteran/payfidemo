@@ -43,6 +43,7 @@ const erc20ApproveAbi = parseAbi([
   "function allowance(address owner, address spender) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
 ]);
+const erc20MetaAbi = parseAbi(["function decimals() view returns (uint8)"]);
 
 let demoEscrowCounter = 1;
 
@@ -106,12 +107,83 @@ router.post("/", async (req, res) => {
     res.status(400).json({ error: "missing required fields" });
     return;
   }
+  const hasClientAssetDecimals = typeof b.assetDecimals === "number";
+  if (
+    hasClientAssetDecimals &&
+    (!Number.isInteger(b.assetDecimals) || b.assetDecimals < 0 || b.assetDecimals > 255)
+  ) {
+    res.status(400).json({ error: "assetDecimals must be an integer in [0,255]" });
+    return;
+  }
+  let merchant: Address;
+  let user: Address;
+  let asset: Address;
+  try {
+    merchant = getAddress(b.merchant);
+    user = getAddress(b.user);
+    asset = getAddress(b.asset);
+  } catch {
+    res.status(400).json({ error: "invalid address in merchant/user/asset" });
+    return;
+  }
+  let amountTotal: bigint;
+  let amountPerLesson: bigint;
+  try {
+    amountTotal = BigInt(b.amountTotal);
+    amountPerLesson = BigInt(b.amountPerLesson);
+  } catch {
+    res.status(400).json({ error: "amountTotal/amountPerLesson must be integer strings" });
+    return;
+  }
+  if (amountTotal <= 0n || amountPerLesson <= 0n) {
+    res.status(400).json({ error: "amountTotal/amountPerLesson must be > 0" });
+    return;
+  }
+  if (amountPerLesson > amountTotal) {
+    res.status(400).json({ error: "amountPerLesson cannot exceed amountTotal" });
+    return;
+  }
+  if (amountTotal % BigInt(b.maxReleases) !== 0n || amountPerLesson * BigInt(b.maxReleases) !== amountTotal) {
+    res.status(400).json({
+      error: "amount mismatch with maxReleases",
+      detail: "amountTotal must be divisible by maxReleases, and amountPerLesson must equal amountTotal/maxReleases",
+    });
+    return;
+  }
+  if (isChainMode()) {
+    try {
+      const publicClient = getPublicClient();
+      const onChainDecimals = Number(
+        await publicClient.readContract({
+          address: asset,
+          abi: erc20MetaAbi,
+          functionName: "decimals",
+        }),
+      );
+      if (hasClientAssetDecimals && b.assetDecimals !== onChainDecimals) {
+        res.status(400).json({
+          error: "asset decimals mismatch",
+          detail: `client assetDecimals=${b.assetDecimals}, on-chain decimals=${onChainDecimals} for ${asset}`,
+          token: asset,
+          clientAssetDecimals: b.assetDecimals,
+          onChainAssetDecimals: onChainDecimals,
+        });
+        return;
+      }
+    } catch (e) {
+      res.status(400).json({
+        error: "asset metadata read failed",
+        detail: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
+  }
   const intentId = randomUUID();
   const record: IntentRecord = {
     intentId,
-    merchant: getAddress(b.merchant),
-    user: getAddress(b.user),
-    asset: getAddress(b.asset),
+    merchant,
+    user,
+    asset,
     amountTotal: b.amountTotal,
     amountPerLesson: b.amountPerLesson,
     maxReleases: b.maxReleases,

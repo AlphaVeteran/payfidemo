@@ -49,6 +49,8 @@ export interface CreateIntentBody {
   merchant: string;
   user: string;
   asset: string;
+  /** Optional client-side decimals hint for server-side sanity check */
+  assetDecimals?: number;
   amountTotal: string;
   amountPerLesson: string;
   maxReleases: number;

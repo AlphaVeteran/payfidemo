@@ -46,6 +46,35 @@
 
 ## 当日记录（按日期倒序：最新在上）
 
+## 当日记录（2026-04-20）
+
+【今日完成】
+- **定位商家收款“看不到转账”的根因并复盘三笔 release 去向**：针对 `intentId=18b52c20-49ee-4390-a038-7ef486ad646e` 核对 `SETTLEMENT_RELEASED` 三笔交易，确认三笔均从 `PayFiEscrow` 转到商家 EOA `0x4905290E3450761D7aF0FdfdC01f89a2ea5369c9`，代币均为 `AxCNH`（`0x3129Ab04F6280A55A70aba40e96264075AbdcA0d`）。
+- **确认金额显示异常由 decimals 错配导致**：链上读取 `AxCNH.decimals=18`，而 Conflux 前端示例曾按 `6` 计算，导致每期 `amountPerLesson=30000000` 被钱包/浏览器解释为 `0.00000000003`（而非预期 30）。
+- **A：修正 Conflux 前端示例 decimals 配置**：
+  - `frontend/.env.conflux.testnet.example` 调整为 `NEXT_PUBLIC_DEMO_ASSET_DECIMALS=18`；
+  - 并统一示例资产地址为 `0x3129Ab04F6280A55A70aba40e96264075AbdcA0d`（`NEXT_PUBLIC_DEMO_ASSET_ADDRESS` / `NEXT_PUBLIC_USDC_CONTRACT`）。
+- **B：前端提交前增加链上 decimals 强校验**（`frontend/components/payfi-demo.tsx`）：
+  - 新增 `ensureAssetDecimalsMatch()`：创建 intent 前先 `readContract(decimals)`；
+  - 若“配置 decimals”与“链上 decimals”不一致，直接阻止创建并给出明确错误；
+  - 创建请求增加 `assetDecimals` 字段，供后端二次校验。
+- **C：后端 `POST /intents` 增加金额与 decimals 防呆校验**（`src/routes/intents.ts`）：
+  - 校验 `merchant/user/asset` 地址合法性；
+  - 校验 `amountTotal/amountPerLesson` 为正整数字符串，且满足 `amountTotal % maxReleases == 0` 与 `amountPerLesson * maxReleases == amountTotal`；
+  - 链上模式下读取 `asset.decimals()`，与前端上传的 `assetDecimals` 比对，不一致直接 `400`；
+  - 失败返回 `error + detail`，便于前端与运维定位。
+- **类型与错误透传补齐**：
+  - `src/types.ts`：`CreateIntentBody` 新增可选 `assetDecimals?: number`；
+  - `frontend/lib/payfi-api.ts`：`createIntent` 改为优先透传后端 `detail`，避免仅显示泛化错误。
+- **质量检查**：上述改动文件执行 `ReadLints`，无新增告警。
+
+【代码证据】
+- 后端路由与校验：`src/routes/intents.ts`
+- 类型定义：`src/types.ts`
+- 前端创建逻辑与链上 decimals 校验：`frontend/components/payfi-demo.tsx`
+- 前端 API 错误透传：`frontend/lib/payfi-api.ts`
+- Conflux 前端环境示例：`frontend/.env.conflux.testnet.example`
+
 ## 当日记录（2026-04-17）
 
 【今日完成】

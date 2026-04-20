@@ -160,13 +160,14 @@ export async function createIntent(body: Record<string, unknown>): Promise<{
   }
   const data: {
     error?: string;
+    detail?: string;
     intentId?: string;
     status?: string;
     paymentUrl?: string | null;
     hskPaymentReqId?: string | null;
   } =
     await res.json();
-  if (!res.ok) throw new Error(data.error || "create failed");
+  if (!res.ok) throw new Error(apiFailMessage(data, "create failed"));
   return {
     intentId: data.intentId!,
     status: data.status!,
