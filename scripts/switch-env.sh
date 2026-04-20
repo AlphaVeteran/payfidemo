@@ -65,6 +65,32 @@ force_link() {
   ln -s "$target" .env
 }
 
+# Upsert KEY=value into target without sed(1) replacement: values like Neon URLs contain "&",
+# which sed treats as "matched text" in the replacement and corrupts the line (duplication).
+# Also drops duplicate KEY= lines so repeated overlays do not stack.
+upsert_env_key_in_file() {
+  local target_file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp
+  tmp="$(mktemp)"
+  local wrote=0
+  while IFS= read -r pline || [[ -n "$pline" ]]; do
+    if [[ "$pline" == "${key}="* ]]; then
+      if [[ $wrote -eq 0 ]]; then
+        printf '%s\n' "${key}=${value}"
+        wrote=1
+      fi
+    else
+      printf '%s\n' "$pline"
+    fi
+  done < "$target_file" > "$tmp"
+  if [[ $wrote -eq 0 ]]; then
+    printf '%s\n' "${key}=${value}" >> "$tmp"
+  fi
+  mv "$tmp" "$target_file"
+}
+
 overlay_env_file() {
   local target_file="$1"
   local overlay_file="$2"
@@ -96,11 +122,7 @@ overlay_env_file() {
       continue
     fi
 
-    if awk -F= -v k="$key" '$1 == k { found=1 } END { exit(found ? 0 : 1) }' "$target_file"; then
-      sed -i '' -E "s|^${key}=.*$|${key}=${value}|" "$target_file"
-    else
-      printf '%s=%s\n' "$key" "$value" >> "$target_file"
-    fi
+    upsert_env_key_in_file "$target_file" "$key" "$value"
   done < "$overlay_file"
 }
 

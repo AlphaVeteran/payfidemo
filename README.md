@@ -95,7 +95,6 @@ We successfully validated the Phase 1 end-to-end flow from Core-side order depos
 
 ### Hackfest Submission Doc
 
-- Full submission draft: [docs/hackfest-2026-submission.md](docs/hackfest-2026-submission.md)
 - README to copy into `global-hackfest-2026/projects/<name>/`: [docs/hackfest-2026-projects-readme.md](docs/hackfest-2026-projects-readme.md)
 
 ---

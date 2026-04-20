@@ -489,15 +489,56 @@ npm run relayer:core-to-espace
 
 ## 7. 常见问题与处理
 
+### 7.1 `CoreOrderMapped` 等待超时 / `cross-space demo failed (code 1)` 逐步排查
+
+下列现象同源：`npm run demo:cross-space` 或前端触发的 cross-space demo 子进程在 **`DEMO_WAIT_MS`**（例：`waitMs=600000`）内未观察到映射；stderr 含 **`timeout waiting CoreOrderMapped event`**；经 API 包装时可能形如 **`cross-space demo failed (code 1) timeout waiting CoreOrderMapped event | orderId=… | waitMs=… | pollMs=… | apiBase=…`**，并提示查看 relayer 日志。
+
+**脚本在等什么（满足其一即成功退出）**
+
+1. **链上**：对 `ESPACE_ADAPTER_ADDRESS` 做 eSpace `eth_getLogs`，命中带索引的 `CoreOrderMapped`，且 `coreOrderId` 等于本次 **`DEMO_ORDER_ID`**（未设置时多为 `Date.now()`）。
+2. **API**：`GET /api/payfi/v1/intents/core-links/by-core-order/:coreOrderId` 能返回 **`escrowId`**（通常由 Relayer `POST .../core-links/mapped` 写入）。
+
+二者在整段等待期内都不成立时，进程以 **code 1** 结束；RPC、扫描节奏、回调是否成功都会抖动，故可能表现为**间歇、无明显规律**。
+
+**建议按顺序核对**
+
+1. **Relayer 日志**（同一 `orderId`）  
+   - 是否出现 `[relayer] scan epoch …`、`mapped coreOrder=…`、`linked coreOrder=…`，或 **`already processed … notified API`**（已映射仅补写后端）。  
+   - 若出现 **`[relayer] failed order=…`**：多为 `createEscrowFromCore` revert（见本节下文「relayer 报 `processed` / `createEscrowFromCore` 回退」：`processed`、`NotRelayer`、代币/授权、`totalMismatch`、`expires` 等）。  
+   - 若已有 **`mapped coreOrder=…`** 但**没有** `linked coreOrder=…`：可能是映射交易已上链，但 Relayer 在 receipt 所在块内解析 `CoreOrderMapped` 失败，**未调用** `POST .../mapped`；此时 demo 仅依赖自身的 `getLogs`；若 eSpace RPC 同时抽风，两条路径都可能为空直至超时。
+2. **eSpace 浏览器**  
+   - 该 `coreOrderId` 是否已有 **`createEscrowFromCore`** / **`CoreOrderMapped`** 交易；若没有，问题在 Core 扫描或链上调用失败，而非 demo 轮询本身。
+3. **API 是否已有映射**（端口按本机 API 修改）  
+   - `GET http://127.0.0.1:8787/api/payfi/v1/intents/core-links/by-core-order/<coreOrderId>`  
+   - 若链上已映射但此处长期 **404**：重点查 **`PAYFI_API_URL`** 是否与 API 实际地址一致（含 **`PORT`**：未设则 demo 默认 `http://127.0.0.1:8787`），以及 Relayer 是否 **`POST .../mapped` 失败**（非 2xx 会在 relayer 侧抛错）。
+4. **环境变量与权限**  
+   - **`PAYFI_API_URL`**：Relayer、跑 API 的机器、以及 **`cross-space-demo` 子进程**（继承服务端 `process.env`）应指向**同一** API 根 URL。  
+   - **`ESPACE_ADAPTER_ADDRESS`**、**`RELAYER_PRIVATE_KEY`** 对应地址须在链上 **`isRelayer`**；Core 端点须支持 **`cfx_*`**（如 `https://test.confluxrpc.com`）。
+5. **参数与合约约束**  
+   - **`DEMO_*`** 须满足托管合约约定（例如 **`amountTotal == maxReleases * amountPerLesson`**、**`expiresAt > block.timestamp`** 等）；与链上已存在的 **`coreOrderId`** 冲突时可能表现为 **`processed`**（无新事件），见下条与 §9。
+
+**与 `intentId` 的关系**：界面上的 **`intentId`**（UUID）与 Core 侧 **`orderId` / `coreOrderId`** 在 PoC 中为弱绑定；排查时请始终以报错中的 **`orderId=`**、relayer 日志与浏览器为准，不要仅用 intent 是否存在判断映射是否完成。
+
+**相关环境变量简述**
+
+| 变量 | 作用 |
+| --- | --- |
+| `DEMO_WAIT_MS` | `cross-space-demo` 等待映射的最长时间（须小于服务端 **`CROSS_SPACE_DEMO_TIMEOUT_MS`** 的合理余量）。 |
+| `DEMO_POLL_MS` | 轮询间隔（报错里的 `pollMs`）。 |
+| `PAYFI_API_URL` | Demo 与 Relayer 回调 API 的根 URL；与 **`PORT`** 不一致时易写错实例。 |
+| `ESPACE_RPC_URL` | eSpace `getLogs` 不稳时，终端可能出现 `[demo] getLogs error`，可更换节点重试。 |
+
+---
+
 - 钱包网络不一致  
   - 现象：按钮不可点或交易失败  
   - 处理：MetaMask 切 71，Fluent 切 1；确认当前操作链与页面提示一致。
 - 角色地址不一致  
   - 现象：提示“当前钱包必须是合同用户/商家”  
   - 处理：切换到对应角色账号再操作。
-- relayer 无映射日志  
-  - 现象：`demo:cross-space` 超时等待 `CoreOrderMapped`  
-  - 处理：检查 relayer 是否在运行、Adapter 地址与私钥是否匹配、RPC 是否可用；Core 端点请使用支持 `cfx_*` 的 RPC（如 `https://test.confluxrpc.com`）。
+- relayer 无映射日志 / demo 等不到 `CoreOrderMapped`  
+  - 现象：`demo:cross-space` 或 cross-space demo 任务失败，超时等待 `CoreOrderMapped`（详见 **§7.1** 逐步排查）。  
+  - 处理：先按 **§7.1** 核对 relayer、浏览器、API `by-core-order`、**`PAYFI_API_URL`/`PORT`** 与 RPC；并确认 Core 端点支持 `cfx_*`（如 `https://test.confluxrpc.com`）。
 - relayer 报 `processed` / `createEscrowFromCore` 回退  
   - 现象：日志中出现 `revert: processed` 或 viem 提示该调用因 `processed` 失败；同时 **`cross-space demo` 长时间轮询后报 `cross-space demo status polling timed out`**（或后端子进程等映射超时）。  
   - 原因：`ESpaceEscrowAdapter` 对每个 **`coreOrderId` 只允许映射一次**（`processedOrderId[coreOrderId]`）。Relayer **重启后从较早 epoch 重扫**、或同一笔 Core `OrderDeposited` 被处理两次时，第二次链上会按设计回退，**不会产生新的 `CoreOrderMapped`**；若此时也未向后端补写映射，demo 会一直等。  

@@ -56,6 +56,11 @@ export function getPgPool(): pg.Pool | null {
     pool = new pg.Pool({
       connectionString: raw,
       max: 10,
+      keepAlive: true,
+      idleTimeoutMillis: 30_000,
+    });
+    pool.on("error", (err) => {
+      console.error("[payfidemo] Postgres pool idle client error (will reconnect on next query):", err);
     });
   }
   return pool;

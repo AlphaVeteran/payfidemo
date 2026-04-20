@@ -81,7 +81,6 @@
 
 ### Hackfest 提交文档
 
-- 完整提交草案: [docs/hackfest-2026-submission.md](docs/hackfest-2026-submission.md)
 - 复制到 `global-hackfest-2026/projects/<name>/` 的 README: [docs/hackfest-2026-projects-readme.md](docs/hackfest-2026-projects-readme.md)
 
 ---

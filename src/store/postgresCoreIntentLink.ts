@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { getPgPool } from "../db/pool.js";
+import { withPgTransientRetry } from "../db/pgTransientRetry.js";
 import type { CoreIntentLinkRecord } from "../types.js";
 
 function pool(): Pool {
@@ -29,6 +30,7 @@ function toRecord(row: {
 export async function pgGetCoreIntentLinkByCoreOrderId(
   coreOrderId: string,
 ): Promise<CoreIntentLinkRecord | undefined> {
+  return withPgTransientRetry(async () => {
   const { rows } = await pool().query<{
     core_order_id: string;
     escrow_id: string;
@@ -43,11 +45,13 @@ export async function pgGetCoreIntentLinkByCoreOrderId(
     [coreOrderId],
   );
   return rows[0] ? toRecord(rows[0]) : undefined;
+  });
 }
 
 export async function pgGetCoreIntentLinkByEscrowId(
   escrowId: string,
 ): Promise<CoreIntentLinkRecord | undefined> {
+  return withPgTransientRetry(async () => {
   const { rows } = await pool().query<{
     core_order_id: string;
     escrow_id: string;
@@ -64,11 +68,13 @@ export async function pgGetCoreIntentLinkByEscrowId(
     [escrowId],
   );
   return rows[0] ? toRecord(rows[0]) : undefined;
+  });
 }
 
 export async function pgGetCoreIntentLinkByIntentId(
   intentId: string,
 ): Promise<CoreIntentLinkRecord | undefined> {
+  return withPgTransientRetry(async () => {
   const { rows } = await pool().query<{
     core_order_id: string;
     escrow_id: string;
@@ -85,6 +91,7 @@ export async function pgGetCoreIntentLinkByIntentId(
     [intentId],
   );
   return rows[0] ? toRecord(rows[0]) : undefined;
+  });
 }
 
 export async function pgUpsertCoreIntentLink(record: {
@@ -93,6 +100,7 @@ export async function pgUpsertCoreIntentLink(record: {
   intentId?: string;
   mappedTxHash?: string;
 }): Promise<CoreIntentLinkRecord> {
+  return withPgTransientRetry(async () => {
   const { rows } = await pool().query<{
     core_order_id: string;
     escrow_id: string;
@@ -112,5 +120,5 @@ export async function pgUpsertCoreIntentLink(record: {
     [record.coreOrderId, record.escrowId, record.intentId ?? null, record.mappedTxHash ?? null],
   );
   return toRecord(rows[0]!);
+  });
 }
-
